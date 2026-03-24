@@ -6,6 +6,9 @@ from numpy.random import default_rng
 # -----------------------
 # Setup
 # -----------------------
+if "selected_session" not in st.session_state:
+    st.session_state.selected_session = None
+
 if "page" not in st.session_state:
     st.session_state.page = "patients"
 
@@ -135,7 +138,7 @@ if st.session_state.page == "patients":
         col1, col2 = st.columns([1, 5])
 
         with col1:
-            st.image("https://via.placeholder.com/100", width=80)
+            st.image("person.jpg", width="content")
 
         with col2:
             st.subheader(patient)
@@ -273,15 +276,12 @@ if st.session_state.page == "patients":
             with col2:
                 st.markdown("### Timeline")
 
-                for i in range(4):
-                    st.markdown(f"""
-                    <div style='background:#f3f6fb;padding:10px;border-radius:10px;margin-bottom:10px;'>
-                        <b>Feb {25 - i*3}, 2026</b><br>
-                        Completed in 28 min<br>
-                        Reported: Hard<br>
-                        <i>Note: "Felt tired today"</i>
-                    </div>
-                    """, unsafe_allow_html=True)
+                for i in range(10):  # or your real session data
+                    date = f"Feb {25 - i*2}, 2026"
+
+                    if st.button(f"{date} | Completed in 28 min", key=f"session_{i}"):
+                        st.session_state.selected_session = date
+                        st.session_state.page = "session_detail"
 
         st.divider()
 
@@ -347,3 +347,149 @@ elif st.session_state.page == "builder":
 
     if st.button("⬅ Back to Profile"):
         st.session_state.page = "patients"
+# -------- SESSION DETAIL PAGE --------
+elif st.session_state.page == "session_detail":
+
+    import numpy as np
+
+    session = st.session_state.selected_session
+
+    st.title(session)
+
+    # -----------------------
+    # FAKE DATA
+    # -----------------------
+    t = np.linspace(0, 60, 200)
+    imu_signal = np.sin(t / 3) + np.random.normal(0, 0.1, 200)
+    reps_signal = np.abs(np.sin(t / 5)) * 10
+    balance = np.random.normal(0.6, 0.1, 200)
+
+    symmetry_left = np.random.uniform(0.4, 0.7, 50)
+    symmetry_right = np.random.uniform(0.3, 0.6, 50)
+
+    rom_values = np.random.uniform(30, 90, 10)
+
+    # -----------------------
+    # TOP SUMMARY
+    # -----------------------
+    st.markdown("### Session Summary")
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Duration", "28 min")
+    m2.metric("Reps", "68")
+    m3.metric("Stability", "62%")
+    m4.metric("Fatigue", "3.8")
+
+    st.divider()
+
+    col1, col2 = st.columns(2)
+
+    # -----------------------
+    # LEFT COLUMN
+    # -----------------------
+    with col1:
+
+        st.subheader("Patient Video")
+        st.empty()
+
+        st.markdown("### Core Metrics")
+
+        st.progress(0.62)
+        st.caption("Alignment: 62%")
+
+        st.progress(0.62)
+        st.caption("Stability: 62%")
+
+        st.progress(0.42)
+        st.caption("Compensation Ratio: 0.42")
+
+        st.progress(0.62)
+        st.caption("Movement Speed: 62%")
+
+        st.markdown("### Movement Signal")
+        st.line_chart(imu_signal)
+
+        st.markdown("### Repetition Pattern")
+        st.area_chart(reps_signal)
+
+    # -----------------------
+    # RIGHT COLUMN
+    # -----------------------
+    with col2:
+
+        st.markdown("### Balance Over Time")
+        st.line_chart(balance)
+
+        st.markdown("### Left vs Right Symmetry")
+        sym_df = {
+            "Left": symmetry_left,
+            "Right": symmetry_right
+        }
+        st.bar_chart(sym_df)
+
+        st.markdown("### Range of Motion")
+        st.bar_chart(rom_values)
+
+        st.divider()
+
+        # -----------------------
+        # SPLIT CONTENT ACROSS BOTH COLUMNS
+        # -----------------------
+
+        exercises = [
+            ("Shoulder Rolls", 10, "2 min"),
+            ("Gentle Knee Extensions", 18, "4 min"),
+            ("Sit to Stand", 0, "0 min"),
+            ("Heel Raises", 20, "3 min"),
+            ("Seated Arm Raises", 20, "3 min"),
+            ("Weight Shifts", 15, "2 min"),
+        ]
+
+        left_ex = exercises[:3]
+        right_ex = exercises[3:]
+
+        # LEFT COLUMN (add exercises)
+        with col1:
+
+            st.markdown("### Exercises")
+
+            for name, reps, time in left_ex:
+                st.markdown(f"""
+                **{name}**  
+                Reps: {reps}  
+                Time: {time}
+                """)
+                st.divider()
+            
+            st.markdown("### Post Exercise Survey")
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                st.markdown("**Symptoms**")
+                st.success("Getting Better")
+
+                st.markdown("**Pain**")
+                st.metric("", "7")
+
+            with c2:
+                st.markdown("**Notes**")
+                st.caption("Felt tired today")               
+
+        # RIGHT COLUMN (rest of exercises + survey)
+        with col2:
+
+            st.markdown("### Exercises")
+
+            for name, reps, time in right_ex:
+                st.markdown(f"""
+                **{name}**  
+                Reps: {reps}  
+                Time: {time}
+                """)
+                st.divider()
+
+            st.markdown("### Skipped")
+            st.warning("Sit to Stand")
+
+            
