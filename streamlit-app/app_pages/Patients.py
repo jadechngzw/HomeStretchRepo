@@ -164,8 +164,7 @@ if st.session_state.page == "patients":
         # -----------------------
         # TABS
         # -----------------------
-        tab1, tab2 = st.tabs(["Information", "Session"])
-
+        tab1, tab2, tab3 = st.tabs(["Information", "Session", "Latest Session"])
         # =======================
         # INFORMATION TAB
         # =======================
@@ -255,7 +254,7 @@ if st.session_state.page == "patients":
         # =======================
         with tab2:
 
-            col1, col2 = st.columns([1, 2])
+            col1, col2 = st.columns(2)
 
             # ---- LEFT SIDE ----
             with col1:
@@ -345,7 +344,7 @@ elif st.session_state.page == "builder":
 
     st.divider()
 
-    if st.button("⬅ Back to Profile"):
+    if st.button("⬅ Back to Patient Profile"):
         st.session_state.page = "patients"
 # -------- SESSION DETAIL PAGE --------
 elif st.session_state.page == "session_detail":
@@ -355,6 +354,8 @@ elif st.session_state.page == "session_detail":
     session = st.session_state.selected_session
 
     st.title(session)
+    if st.button("⬅ Back to Patient Profile"):
+        st.session_state.page = "patients"
 
     # -----------------------
     # FAKE DATA
@@ -491,5 +492,31 @@ elif st.session_state.page == "session_detail":
 
             st.markdown("### Skipped")
             st.warning("Sit to Stand")
+        # =======================
+        # LATEST SESSION TAB
+        # =======================
+        with tab3:
 
-            
+            st.markdown("### Latest Session Overview")
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Duration", "28 min")
+            m2.metric("Reps", "68")
+            m3.metric("Stability", "62%")
+
+            st.markdown("### Movement Signal")
+            st.line_chart(np.random.randn(100))
+
+            st.markdown("### Key Metrics")
+
+            st.progress(0.62)
+            st.caption("Alignment: 62%")
+
+            st.progress(0.58)
+            st.caption("Balance: 58%")
+
+            st.progress(0.45)
+            st.caption("Compensation: 0.45")
+
+            st.info("Latest session shows moderate fatigue but stable movement patterns.")
+                    
