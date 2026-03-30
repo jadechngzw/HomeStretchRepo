@@ -2,7 +2,35 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from numpy.random import default_rng
+import firebase_admin
+from firebase_admin import credentials, firestore
+# from streamlit_autorefresh import st_autorefresh
 
+# st.autorefresh(interval=5000, key="datarefresh")  # refresh every 5 sec
+st.set_page_config(layout="wide")
+
+# Initialize only once
+if not firebase_admin._apps:
+    cred = credentials.Certificate("homestretch-pipeline-dd44878d3e26.json")
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+
+def get_latest_session():
+
+    sessions_ref = db.collection("sessions")
+    docs = sessions_ref.stream()
+
+    data = []
+    for doc in docs:
+        d = doc.to_dict()
+        d["id"] = doc.id
+        data.append(d)
+
+    # Sort by newest (you can refine later)
+    latest = data[-1]
+
+    return latest
 # -----------------------
 # Setup
 # -----------------------
@@ -265,28 +293,193 @@ if st.session_state.page == "patients":
                 • Increased difficulty this week  
                 """)
 
+                import numpy as np
+                import pandas as pd
+
                 st.markdown("### Session Overview")
 
-                st.metric("Adherence", "82%")
-                st.metric("Sessions This Week", "3")
-                st.metric("Avg Duration", "28 min")
+                # -----------------------
+                # GET SESSION DATA
+                # -----------------------
+                def get_all_sessions():
+                    docs = db.collection("sessions").stream()
+
+                    sessions = []
+                    for doc in docs:
+                        d = doc.to_dict()
+                        d["id"] = doc.id
+                        sessions.append(d)
+
+                    return sessions
+
+                sessions = get_all_sessions()
+
+                # -----------------------
+                # HANDLE EMPTY DATA
+                # -----------------------
+                if len(sessions) == 0:
+                    st.info("No session data available yet")
+
+                else:
+                    # -----------------------
+                    # PREP DATA
+                    # -----------------------
+                    reps = [s["num_reps"] for s in sessions]
+                    duration = [s["duration_sec"] for s in sessions]
+
+                    labels = [f"S{i+1}" for i in range(len(sessions))]
+
+                    df = pd.DataFrame({
+                        "Session": labels,
+                        "Reps": reps,
+                        "Duration": duration
+                    })
+
+                    # -----------------------
+                    # METRICS ROW
+                    # -----------------------
+                    m1, m2, m3 = st.columns(3)
+
+                    m1.metric("Avg Reps", round(np.mean(reps), 1))
+                    m2.metric("Avg Duration", f"{round(np.mean(duration),1)} sec")
+                    m3.metric("Best Session", max(reps))
+
+                    st.divider()
+
+                    # -----------------------
+                    # CHARTS
+                    # -----------------------
+                    a, b = st.columns(2)
+
+                    with a:
+                        st.markdown("#### Reps per Session")
+                        st.bar_chart(df.set_index("Session")["Reps"])
+                        
+
+                    with b:
+                        st.markdown("#### Duration Trend")
+                        st.line_chart(df.set_index("Session")["Duration"])
+
 
             # ---- RIGHT SIDE ----
             with col2:
+                import datetime
+                import random
+
+                def get_all_sessions():
+                    docs = db.collection("sessions").stream()
+
+                    sessions = []
+                    for doc in docs:
+                        d = doc.to_dict()
+                        d["id"] = doc.id
+
+                        # 🔥 FAKE TIMESTAMP (last ~2 hours)
+                        minutes_ago = random.randint(0, 120)
+                        fake_time = datetime.datetime.now() - datetime.timedelta(minutes=minutes_ago)
+
+                        d["fake_time"] = fake_time
+
+                        sessions.append(d)
+
+                    # sort newest first
+                    sessions = sorted(
+                        sessions,
+                        key=lambda x: x["fake_time"],
+                        reverse=True
+                    )
+
+                    return sessions
+
+
+                sessions = get_all_sessions()
+
                 st.markdown("### Timeline")
 
-                for i in range(10):  # or your real session data
-                    date = f"Feb {25 - i*2}, 2026"
+                for i, s in enumerate(sessions):
 
-                    if st.button(f"{date} | Completed in 28 min", key=f"session_{i}"):
-                        st.session_state.selected_session = date
-                        st.session_state.page = "session_detail"
+                    time_str = s["fake_time"].strftime("%b %d, %I:%M %p")
 
+                    label = f"{time_str} | {s['num_reps']} reps | {round(s['duration_sec'],1)} sec"
+
+                    if st.button(label, key=f"session_{i}"):
+
+                        st.session_state.selected_session = s["id"]
+                        st.session_state.selected_session_data = s
+                        st.session_state.selected_session_time = time_str  
+                        st.session_state.page = "session_detail"                    
+
+                    st.markdown(f"""
+                    <div style="
+                        background:#f3f6fb;
+                        padding:12px;
+                        border-radius:12px;
+                        margin-bottom:10px;
+                    ">
+                        <b>{s['classification']}</b> • Tremor: {s['tremor_level']}
+                    </div>
+                    """, unsafe_allow_html=True)
         st.divider()
 
         # Back button
         if st.button("⬅ Back to Patients"):
             st.session_state.selected_patient = None
+         # =======================
+        # LATEST SESSION TAB
+        # =======================
+        with tab3:
+
+            latest = get_latest_session()
+
+            st.markdown("### Latest Session")
+
+            # -----------------------
+            # TOP METRICS
+            # -----------------------
+            m1, m2, m3, m4 = st.columns(4)
+
+            m1.metric("Reps", latest["num_reps"])
+            m2.metric("Duration", f"{round(latest['duration_sec'],1)} sec")
+            m3.metric("SNR", f"{round(latest['snr_db'],1)} dB")
+            m4.metric("Tremor", latest["tremor_level"])
+
+            # -----------------------
+            # QUALITY STATUS
+            # -----------------------
+            if latest["classification"] == "Very Smooth":
+                st.success("Movement Quality: Very Smooth")
+            elif latest["classification"] == "Good Control":
+                st.success("Movement Quality: Good Control")
+            else:
+                st.warning("Movement Quality: Needs Improvement")
+
+            # -----------------------
+            # TREMOR VISUAL
+            # -----------------------
+            st.markdown("### Tremor Ratio")
+            st.progress(float(latest["tremor_ratio"]))
+            st.caption(f"{round(latest['tremor_ratio'],4)}")
+
+            # -----------------------
+            # SESSION DETAILS
+            # -----------------------
+            st.markdown("### Session Details")
+
+            st.write(f"File: {latest['file_name']}")
+            st.write(f"Duration: {round(latest['duration_sec'],1)} seconds")
+            st.write(f"Reps: {latest['num_reps']}")
+            st.write(f"Signal Quality: {round(latest['snr_db'],1)} dB")
+
+            # -----------------------
+            # FAKE IMU GRAPH (replace later)
+            # -----------------------
+            import numpy as np
+
+            signal = np.sin(np.linspace(0,10,100)) + np.random.normal(0,0.1,100)
+
+            st.markdown("### Movement Signal")
+            st.line_chart(signal)
+                    
 
 # -------- PROGRAM BUILDER --------
 elif st.session_state.page == "builder":
@@ -351,34 +544,33 @@ elif st.session_state.page == "session_detail":
 
     import numpy as np
 
-    session = st.session_state.selected_session
+    session_data = st.session_state.selected_session_data
 
-    st.title(session)
+    st.header("Session Details")
+
+    if "selected_session_time" in st.session_state:
+        st.subheader(st.session_state.selected_session_time)
     if st.button("⬅ Back to Patient Profile"):
         st.session_state.page = "patients"
 
-    # -----------------------
-    # FAKE DATA
-    # -----------------------
-    t = np.linspace(0, 60, 200)
-    imu_signal = np.sin(t / 3) + np.random.normal(0, 0.1, 200)
-    reps_signal = np.abs(np.sin(t / 5)) * 10
-    balance = np.random.normal(0.6, 0.1, 200)
-
-    symmetry_left = np.random.uniform(0.4, 0.7, 50)
-    symmetry_right = np.random.uniform(0.3, 0.6, 50)
-
-    rom_values = np.random.uniform(30, 90, 10)
-
-    # -----------------------
-    # TOP SUMMARY
-    # -----------------------
-    st.markdown("### Session Summary")
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Duration", "28 min")
-    m2.metric("Reps", "68")
-    m3.metric("Stability", "62%")
+    # ----------------------- 
+    # FAKE DATA 
+    # ----------------------- 
+    t = np.linspace(0, 60, 200) 
+    imu_signal = np.sin(t / 3) + np.random.normal(0, 0.1, 200) 
+    reps_signal = np.abs(np.sin(t / 5)) * 10 
+    balance = np.random.normal(0.6, 0.1, 200) 
+    symmetry_left = np.random.uniform(0.4, 0.7, 50) 
+    symmetry_right = np.random.uniform(0.3, 0.6, 50) 
+    rom_values = np.random.uniform(30, 90, 10) 
+    # ----------------------- 
+    # TOP SUMMARY 
+    # ----------------------- 
+    st.markdown("### Session Summary") 
+    m1, m2, m3, m4 = st.columns(4) 
+    m1.metric("Duration", "28 min") 
+    m2.metric("Reps", "68") 
+    m3.metric("Stability", "62%") 
     m4.metric("Fatigue", "3.8")
 
     st.divider()
@@ -492,31 +684,4 @@ elif st.session_state.page == "session_detail":
 
             st.markdown("### Skipped")
             st.warning("Sit to Stand")
-        # =======================
-        # LATEST SESSION TAB
-        # =======================
-        with tab3:
-
-            st.markdown("### Latest Session Overview")
-
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Duration", "28 min")
-            m2.metric("Reps", "68")
-            m3.metric("Stability", "62%")
-
-            st.markdown("### Movement Signal")
-            st.line_chart(np.random.randn(100))
-
-            st.markdown("### Key Metrics")
-
-            st.progress(0.62)
-            st.caption("Alignment: 62%")
-
-            st.progress(0.58)
-            st.caption("Balance: 58%")
-
-            st.progress(0.45)
-            st.caption("Compensation: 0.45")
-
-            st.info("Latest session shows moderate fatigue but stable movement patterns.")
-                    
+    
