@@ -20,6 +20,7 @@ exercises = [
     {"name": "Gentle Knee Extensions", "type": "(warm up)", "details": "2 sets | 10 reps", "time": "~ 3 min"},
     {"name": "Sit to Stand", "type": "", "details": "2 sets | 10 reps", "time": "~ 3 min"},
     {"name": "Heel Raises", "type": "", "details": "2 sets | 10 reps", "time": "~ 3 min"},
+    {"name": "Bicep Curls", "type": "", "details": "2 sets | 10 reps", "time": "~4 min"},
 ]
 
 # ===============================
