@@ -4,9 +4,11 @@ import numpy as np
 from numpy.random import default_rng
 import firebase_admin
 from firebase_admin import credentials, firestore
+import datetime
 # from streamlit_autorefresh import st_autorefresh
 
-# st.autorefresh(interval=5000, key="datarefresh")  # refresh every 5 sec
+# # refresh every 3 seconds
+# count = st_autorefresh(interval=3000, limit=None, key="session_refresh")
 st.set_page_config(layout="wide")
 
 # Initialize only once
@@ -15,40 +17,57 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
+# -----------------------
+# GET SESSION DATA
+# -----------------------
+def get_all_sessions():
+    docs = db.collection("sessions").stream()
 
-def get_latest_session():
-
-    sessions_ref = db.collection("sessions")
-    docs = sessions_ref.stream()
-
-    data = []
-    for doc in docs:
+    sessions = []
+    for i, doc in enumerate(docs):
         d = doc.to_dict()
         d["id"] = doc.id
-        data.append(d)
 
-    # Sort by newest (you can refine later)
-    latest = data[-1]
+        # stable fake timestamp (no reshuffling)
+        d["fake_time"] = datetime.datetime.now() - datetime.timedelta(minutes=i * 10)
 
-    return latest
+        sessions.append(d)
+
+    # newest first
+    sessions = sorted(sessions, key=lambda x: x["fake_time"], reverse=True)
+
+    return sessions
+
+
+def get_latest_session():
+    sessions = get_all_sessions()
+    return sessions[0] if sessions else None
+
 # -----------------------
 # Setup
 # -----------------------
+
 if "selected_session" not in st.session_state:
     st.session_state.selected_session = None
+
+if "selected_session_data" not in st.session_state:
+    st.session_state.selected_session_data = None
+
+if "selected_session_time" not in st.session_state:
+    st.session_state.selected_session_time = None
+
+if "selected_patient" not in st.session_state:
+    st.session_state.selected_patient = None
 
 if "page" not in st.session_state:
     st.session_state.page = "patients"
 
 if "program" not in st.session_state:
     st.session_state.program = []
-    
+
 rng = default_rng()
 
 st.title("Patients")
-
-if "selected_patient" not in st.session_state:
-    st.session_state.selected_patient = None
 
 # -----------------------
 # Generate Data
@@ -297,20 +316,6 @@ if st.session_state.page == "patients":
                 import pandas as pd
 
                 st.markdown("### Session Overview")
-
-                # -----------------------
-                # GET SESSION DATA
-                # -----------------------
-                def get_all_sessions():
-                    docs = db.collection("sessions").stream()
-
-                    sessions = []
-                    for doc in docs:
-                        d = doc.to_dict()
-                        d["id"] = doc.id
-                        sessions.append(d)
-
-                    return sessions
 
                 sessions = get_all_sessions()
 
