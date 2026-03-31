@@ -196,3 +196,5 @@ else:
         if submitted and new_message.strip():
             send_message(conversation_id, new_message.strip())
             st.rerun()
+
+st.title("Messages")

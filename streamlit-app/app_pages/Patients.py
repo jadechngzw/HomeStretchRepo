@@ -371,32 +371,6 @@ if st.session_state.page == "patients":
                 import datetime
                 import random
 
-                def get_all_sessions():
-                    docs = db.collection("sessions").stream()
-
-                    sessions = []
-                    for doc in docs:
-                        d = doc.to_dict()
-                        d["id"] = doc.id
-
-                        # 🔥 FAKE TIMESTAMP (last ~2 hours)
-                        minutes_ago = random.randint(0, 120)
-                        fake_time = datetime.datetime.now() - datetime.timedelta(minutes=minutes_ago)
-
-                        d["fake_time"] = fake_time
-
-                        sessions.append(d)
-
-                    # sort newest first
-                    sessions = sorted(
-                        sessions,
-                        key=lambda x: x["fake_time"],
-                        reverse=True
-                    )
-
-                    return sessions
-
-
                 sessions = get_all_sessions()
 
                 st.markdown("### Timeline")

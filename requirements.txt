@@ -1,0 +1,15 @@
+ipynb
+streamlit 
+pandas
+numpy
+firebase-admin
+streamlit-autorefresh
+matplotlib
+scipy
+torch
+torchaudio
+timm
+tqdm
+tabulate
+scikit-learn
+seaborn
