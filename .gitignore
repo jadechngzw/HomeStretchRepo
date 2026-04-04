@@ -1,4 +1,8 @@
 myvenv
 __pycache__/
 dh2venv/
-homestretch-pipeline-dd44878d3e26.json
+streamlit-app/homestretch-pipeline-5f8f03e61254.json
+streamlit-app/*.json
+streamlit-app/app_pages2/*.json
+homestretch-pipeline-5f8f03e61254.json
+# streamlit-app/homestretch-pipeline-dd44878d3e26.json

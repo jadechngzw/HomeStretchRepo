@@ -5,9 +5,13 @@ from pathlib import Path
 from datetime import datetime
 
 # --- Firebase Init ---
+# if not firebase_admin._apps:
+#     KEY_PATH = Path(__file__).parent / "homestretch-pipeline-5f8f03e61254.json"
+#     cred = credentials.Certificate(str(KEY_PATH))
+#     firebase_admin.initialize_app(cred)
+
 if not firebase_admin._apps:
-    KEY_PATH = Path(__file__).parent / "homestretch-pipeline-5f8f03e61254.json"
-    cred = credentials.Certificate(str(KEY_PATH))
+    cred = credentials.Certificate("homestretch-pipeline-5f8f03e61254.json")
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -196,3 +200,5 @@ else:
         if submitted and new_message.strip():
             send_message(conversation_id, new_message.strip())
             st.rerun()
+
+st.title("Messages")
