@@ -1,13 +1,9 @@
 myvenv
 __pycache__/
 dh2venv/
-<<<<<<< HEAD
 streamlit-app/homestretch-pipeline-5f8f03e61254.json
 streamlit-app/*.json
 streamlit-app/app_pages2/*.json
 homestretch-pipeline-5f8f03e61254.json
 # streamlit-app/homestretch-pipeline-dd44878d3e26.json
-=======
 # streamlit-app/app_pages2/homestretch-pipeline-5f8f03e61254.json
-streamlit-app/homestretch-pipeline-dd44878d3e26.json
->>>>>>> e0cd29cb39761a8621502135de0aeb41a11cb20b
