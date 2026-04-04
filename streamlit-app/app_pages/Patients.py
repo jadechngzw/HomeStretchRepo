@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from numpy.random import default_rng
+# from pathlib import Path
 import firebase_admin
 from firebase_admin import credentials, firestore
 import datetime
@@ -11,10 +12,15 @@ import datetime
 # count = st_autorefresh(interval=3000, limit=None, key="session_refresh")
 st.set_page_config(layout="wide")
 
-# Initialize only once
+# # Initialize only once
 if not firebase_admin._apps:
-    cred = credentials.Certificate("homestretch-pipeline-dd44878d3e26.json")
+    cred = credentials.Certificate("homestretch-pipeline-5f8f03e61254.json")
     firebase_admin.initialize_app(cred)
+
+# if not firebase_admin._apps:
+#     # KEY_PATH = Path(__file__).parent / "homestretch-pipeline-5f8f03e61254.json"
+#     cred = credentials.Certificate("homestretch-pipeline-5f8f03e61254.json")
+#     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 # -----------------------
