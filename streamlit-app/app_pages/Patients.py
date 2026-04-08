@@ -20,6 +20,28 @@ db = firestore.client()
 # -----------------------
 # GET SESSION DATA
 # -----------------------
+# def get_all_sessions():
+#     docs = db.collection("sessions").stream()
+
+#     sessions = []
+#     for doc in docs:
+#         d = doc.to_dict()
+#         d["id"] = doc.id
+
+#         # Real Firestore timestamp
+#         d["session_time"] = doc.create_time if hasattr(doc, "create_time") else None
+
+#         sessions.append(d)
+
+#     # newest first
+#     sessions = sorted(
+#         sessions,
+#         key=lambda x: x["session_time"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+#         reverse=True
+#     )
+
+#     return sessions
+
 def get_all_sessions():
     docs = db.collection("sessions").stream()
 
@@ -27,18 +49,18 @@ def get_all_sessions():
     for doc in docs:
         d = doc.to_dict()
         d["id"] = doc.id
-
-        # Real Firestore timestamp
         d["session_time"] = doc.create_time if hasattr(doc, "create_time") else None
-
         sessions.append(d)
 
-    # newest first
+    # oldest first for numbering
     sessions = sorted(
         sessions,
-        key=lambda x: x["session_time"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
-        reverse=True
+        key=lambda x: x["session_time"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
     )
+
+    # assign S1, S2, S3...
+    for idx, s in enumerate(sessions, start=1):
+        s["session_label"] = f"S{idx}"
 
     return sessions
 
@@ -344,54 +366,62 @@ if st.session_state.page == "patients":
                 if len(sessions) == 0:
                     st.info("No session data available yet")
                 else:
-                    reps = [s.get("num_reps", 0) for s in sessions]
-                    duration = [s.get("duration_sec", 0) for s in sessions]
+                    reps = [float(s.get("num_reps", 0)) for s in sessions]
+                    duration = [float(s.get("duration_sec", 0)) for s in sessions]
+                    labels = [s["session_label"] for s in sessions]
 
                     chart_df = pd.DataFrame({
-                        "Session": [f"S{i+1}" for i in range(len(sessions))],
+                        "Session": labels,
                         "Reps": reps,
                         "Duration": duration
                     })
 
+                    avg_reps = sum(reps) / len(reps)
+                    avg_duration = sum(duration) / len(duration)
+
+                    best_idx = int(np.argmax(reps))
+                    best_session_label = labels[best_idx]
+
                     m1, m2, m3 = st.columns(3)
-                    m1.metric("Avg Reps", round(np.mean(reps), 1))
-                    m2.metric("Avg Duration", f"{round(np.mean(duration),1)} sec")
-                    m3.metric("Best Session", max(reps))
+                    m1.metric("Avg Reps", round(avg_reps, 1))
+                    m2.metric("Avg Duration", f"{round(avg_duration, 1)} sec")
+                    m3.metric("Best Session", best_session_label)
 
                     st.divider()
 
-                    a, b = st.columns(2)
+                    st.markdown("#### Reps per Session")
+                    st.bar_chart(chart_df.set_index("Session")["Reps"])
 
-                    with a:
-                        st.markdown("#### Reps per Session")
-                        st.bar_chart(chart_df.set_index("Session")["Reps"])
-
-                    with b:
-                        st.markdown("#### Duration Trend")
-                        st.line_chart(chart_df.set_index("Session")["Duration"])
+                    st.markdown("#### Duration Trend")
+                    st.line_chart(chart_df.set_index("Session")["Duration"])
 
             with col2:
                 sessions = get_all_sessions()
 
+                # newest first for display
+                display_sessions = list(reversed(sessions))
+
                 st.markdown("### Timeline")
 
-                for i, s in enumerate(sessions):
+                for i, s in enumerate(display_sessions):
                     time_str = format_session_time(s.get("session_time"))
 
                     label = (
-                        f"{time_str} | "
+                        f"{s['session_label']} | {time_str} | "
                         f"{s.get('num_reps', 'N/A')} reps | "
-                        f"{round(s.get('duration_sec', 0), 1)} sec | "
-                        f"{s.get('classification', 'Unknown')} | "
-                        f"Tremor: {s.get('tremor_level', 'Unknown')}"
+                        f"{round(s.get('duration_sec', 0), 1)} sec"
                     )
 
-                    if st.button(label, key=f"session_{i}"):
+                    if st.button(label, key=f"session_{s['id']}"):
                         st.session_state.selected_session = s["id"]
                         st.session_state.selected_session_data = s
                         st.session_state.selected_session_time = time_str
+                        st.session_state.selected_session_label = s["session_label"]
                         st.session_state.page = "session_detail"
 
+                    st.caption(
+                        f"{s.get('classification', 'Unknown')} • Tremor: {s.get('tremor_level', 'Unknown')}"
+                    )
         st.divider()
 
         with tab3:
@@ -471,10 +501,14 @@ elif st.session_state.page == "session_detail":
 
     session_data = st.session_state.selected_session_data
 
-    st.header("Session Details")
+    session_label = st.session_state.get("selected_session_label", "Session")
+    session_time = st.session_state.get("selected_session_time")
 
-    if st.session_state.selected_session_time:
-        st.subheader(st.session_state.selected_session_time)
+    st.header("Session Details")
+    st.subheader(session_label)
+
+    if session_time:
+        st.caption(session_time)
 
     if st.button("⬅ Back to Patient Profile"):
         st.session_state.page = "patients"
