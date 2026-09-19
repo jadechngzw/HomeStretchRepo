@@ -1,7 +1,22 @@
-# Version 0 - Rule Based Logic (Skeleton)
 import random
+import numpy as np
+from pathlib import Path
+from read_watch_data import load_watch_data
+from imu_metrics import (
+    segment_reps,
+    classify_repetitions,
+    compute_snr_db,
+    compute_tremor_energy_ratio,
+    detect_rest_periods,
+)
 
-# Thresholds
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FILEPATH = REPO_ROOT / "mbientcode" / "mbientdata" / "left_atypical_Accelerometer.csv" #path to IMU data 
+MODELPATH = REPO_ROOT / "mbientcode-cloud" / "isolation_forest.pkl"
+SCALERPATH = REPO_ROOT / "mbientcode-cloud" / "scaler.pkl"
+
+# Thresholds and file path can change that can be clinician defined
 rep_goal = 10
 snr_threhold = 15
 smoothness_threshold = 0.7
@@ -10,13 +25,74 @@ hr_active_max = 160
 
 
 # Reading IMU Data
-def read_imu_data():
+def read_imu_data(file_path, signal_column="ay",
+                  model_path=MODELPATH, scaler_path=SCALERPATH):
+
+    data = load_watch_data(file_path, signal_column)
+    signal, time, sample_rate = data["signal"], data["time"], data["sample_rate"]
+
+    all_reps = segment_reps(signal, time, sample_rate)
+
+    reps = [
+        rep for rep in all_reps
+        if 0.8 <= rep["t_end"] - rep["t_start"] <= 3.0  # REMOVES ANY REPS WITH UNREALISTIC LENGTHS
+    ]
+
+    results = classify_repetitions(reps, sample_rate, model_path, scaler_path)
+
+    if reps:
+        exercise_mask = (
+            (time >= reps[0]["t_start"]) &
+            (time <= reps[-1]["t_end"])
+        )
+
+        rest_periods = detect_rest_periods(
+            signal[exercise_mask],
+            time[exercise_mask],
+            sample_rate,
+        )
+    else:
+        rest_periods = []
+
+    rest_time = sum(period["duration"] for period in rest_periods)
+
+    rep_durations = [
+        round(float(rep["t_end"] - rep["t_start"]), 2)
+        for rep in reps
+    ]
+
+    exercise_time = ( reps[-1]["t_end"] - reps[0]["t_start"]
+        if reps else 0
+    )
+
+    active_time = max(exercise_time - rest_time, 0)
+
+    total_duration = float(time[-1] - time[0])
+    classifications = results["classification"].tolist() if not results.empty else []
+    typical_reps = classifications.count("Typical")
+    atypical_reps = classifications.count("Atypical")
+
+    snr = compute_snr_db(signal, sample_rate)
+    tremor = compute_tremor_energy_ratio(signal, sample_rate)
+    smoothness = np.clip(1 / (1 + tremor), 0, 1)
+
     return {
-        "num_reps": random.randint(5, 15),
-        "snr_db": round(random.uniform(10, 25), 2),
-        "smoothness": round(random.uniform(0.4, 1.0), 2),
-        "classification": random.choice(["Typical", "Atypical"]),
-        "duration": random.randint(20, 90)
+        "accepted_reps": len(results),
+        "rep_durations": rep_durations,
+        "average_rep_duration": round(np.mean(rep_durations), 2) if rep_durations else 0,
+        "active_time": round(float(active_time), 2),
+        "rest_time": round(float(rest_time), 2),
+        "rest_periods": rest_periods,
+        "rest_status": "Rest detected" if rest_periods else "No rest detected",
+        "snr_db": round(float(snr), 2),
+        "tremor_score": round(float(tremor), 4),
+        "smoothness": round(float(smoothness), 2),
+        "typical_reps": typical_reps,
+        "atypical_reps": atypical_reps,
+        "rep_classifications": classifications,
+        "classification": max(set(classifications), key=classifications.count)
+                        if classifications else "Unknown",
+        "duration": round(total_duration, 2),
     }
 
 
@@ -33,7 +109,7 @@ def infer_patient_state(imu, hr):
     flags = []
     score = 0
 
-    if imu["num_reps"] >= rep_goal:
+    if imu["accepted_reps"] >= rep_goal:
         flags.append("Rep Goal Met")
     else:
         flags.append("Rep Goal Not Met")
@@ -75,20 +151,33 @@ def infer_patient_state(imu, hr):
 
 # Main
 if __name__ == "__main__":
-    imu = read_imu_data()
+    imu = read_imu_data(FILEPATH)
     hr = read_hr_data()
     patient_state, flags = infer_patient_state(imu, hr)
 
     print("\n── Patient Session Summary ──────────────────")
-    print(f"  Reps:         {imu['num_reps']}")
-    print(f"  Duration:     {imu['duration']} sec")
-    print(f"  SNR:          {imu['snr_db']} dB")
-    print(f"  Smoothness:   {imu['smoothness']}")
-    print(f"  Motion:       {imu['classification']}")
-    print(f"  Resting HR:   {hr['hr_rest']} bpm")
-    print(f"  Active HR:    {hr['hr_active']} bpm")
+    print(f"  Accepted Reps:       {imu['accepted_reps']}")
+    print(f"  Rep Durations:       {imu['rep_durations']} sec")
+    print(f"  Avg. Rep Duration:   {imu['average_rep_duration']} sec/rep")
+    print(f"  Active Time:         {imu['active_time']} sec")
+    print(f"  Rest Time:           {imu['rest_time']} sec")
+    print(f"  Rest Status:         {imu['rest_status']}")
+    print(f"  SNR:                 {imu['snr_db']} dB")
+    print(f"  Tremor Score:        {imu['tremor_score']}")
+    print(f"  Smoothness:          {imu['smoothness']}")
+    print(f"  Typical Reps:        {imu['typical_reps']}")
+    print(f"  Atypical Reps:       {imu['atypical_reps']}")
+    print(f"  Rep Classifications: {imu['rep_classifications']}")
+    print(f"  Overall Motion:      {imu['classification']}")
+    print(f"  Total Duration:      {imu['duration']} sec")
+    print(f"  Resting HR:          {hr['hr_rest']} bpm")
+    print(f"  Active HR:           {hr['hr_active']} bpm")
+
     print(f"\n── Patient State: {patient_state}")
+
     print("\n── Flags:")
-    for f in flags:
-        print(f"   {f}")
-    print("─────────────────────────────────────────────\n")
+    if flags:
+        for flag in flags:
+            print(f"  • {flag}")
+    else:
+        print("  • No flags")
