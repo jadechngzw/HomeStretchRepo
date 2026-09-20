@@ -1,8 +1,8 @@
 import random
 import numpy as np
 from pathlib import Path
-from ppg_metrics import load_ppg_data, analyze_ppg, extract_metrics
-from read_watch_data import load_watch_data
+from ppg_metrics import analyze_ppg, extract_metrics
+from read_watch_data import load_watch_data, load_ppg_data
 from imu_metrics import (
     segment_reps,
     classify_repetitions,
@@ -99,9 +99,7 @@ def read_imu_data(file_path, signal_column="ay",
 
 # HR Data
 def read_hr_data():
-    data = load_ppg_data()
-    wd, m = analyze_ppg(data)
-    return extract_metrics(wd, m)
+    return load_ppg_data()
 
 
 # Patient State

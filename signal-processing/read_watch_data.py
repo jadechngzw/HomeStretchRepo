@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from ppg_metrics import load_ppg_data, analyze_ppg, extract_metrics
 
 
 def load_watch_data(file_path, signal_column=None):
@@ -34,3 +35,8 @@ def load_watch_data(file_path, signal_column=None):
     signal = (signal - np.mean(signal)) / (np.std(signal) + 1e-8)
 
     return {"signal": signal, "time": time, "sample_rate": sample_rate}
+
+def load_ppg_metrics():
+    data = load_ppg_data()
+    wd, m = analyze_ppg(data)
+    return extract_metrics(wd, m)
