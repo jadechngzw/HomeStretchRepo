@@ -1,6 +1,7 @@
 import random
 import numpy as np
 from pathlib import Path
+from ppg_metrics import load_ppg_data, analyze_ppg, extract_metrics
 from read_watch_data import load_watch_data
 from imu_metrics import (
     segment_reps,
@@ -98,10 +99,9 @@ def read_imu_data(file_path, signal_column="ay",
 
 # HR Data
 def read_hr_data():
-    return {
-        "hr_rest": random.randint(55, 110),
-        "hr_active": random.randint(90, 180)
-    }
+    data = load_ppg_data()
+    wd, m = analyze_ppg(data)
+    return extract_metrics(wd, m)
 
 
 # Patient State
@@ -127,13 +127,13 @@ def infer_patient_state(imu, hr):
     else:
         flags.append("Good Movement Quality")
 
-    if hr["hr_rest"] > hr_rest_max:
+    if hr["bpm"] > hr_rest_max:
         flags.append("Elevated Resting HR")
         score += 1
     else:
         flags.append("Normal Resting HR")
 
-    if hr["hr_active"] > hr_active_max:
+    if hr["peak_hr_bpm"] > hr_active_max:
         flags.append("Elevated Active HR")
         score += 1
     else:
@@ -170,8 +170,10 @@ if __name__ == "__main__":
     print(f"  Rep Classifications: {imu['rep_classifications']}")
     print(f"  Overall Motion:      {imu['classification']}")
     print(f"  Total Duration:      {imu['duration']} sec")
-    print(f"  Resting HR:          {hr['hr_rest']} bpm")
-    print(f"  Active HR:           {hr['hr_active']} bpm")
+    print(f"  Pulse Rate:          {hr['bpm']} bpm")
+    print(f"  Peak HR:             {hr['peak_hr_bpm']} bpm")
+    print(f"  Time Above Exertion: {hr['time_above_max_hr_sec']} sec")
+    print(f"  Valid Coverage:      {hr['valid_signal_coverage_pct']}%")
 
     print(f"\n── Patient State: {patient_state}")
 
