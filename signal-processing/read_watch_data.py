@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
-from ppg_metrics import load_ppg_data, analyze_ppg, extract_metrics
-
+from ppg_metrics import analyze_ppg, extract_metrics, load_ppg_data
 
 def load_watch_data(file_path, signal_column=None):
     data = pd.read_csv(file_path)
@@ -36,7 +35,9 @@ def load_watch_data(file_path, signal_column=None):
 
     return {"signal": signal, "time": time, "sample_rate": sample_rate}
 
-def load_ppg_metrics():
-    data = load_ppg_data()
+
+def load_ppg_metrics(ppg_file):
+    data = load_ppg_data(ppg_file)
     wd, m = analyze_ppg(data)
     return extract_metrics(wd, m)
+

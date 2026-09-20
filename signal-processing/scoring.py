@@ -2,7 +2,7 @@ import random
 import numpy as np
 from pathlib import Path
 from ppg_metrics import analyze_ppg, extract_metrics
-from read_watch_data import load_watch_data, load_ppg_data
+from read_watch_data import load_watch_data, load_ppg_metrics
 from imu_metrics import (
     segment_reps,
     classify_repetitions,
@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FILEPATH = REPO_ROOT / "mbientcode" / "mbientdata" / "left_atypical_Accelerometer.csv" #path to IMU data 
 MODELPATH = REPO_ROOT / "mbientcode-cloud" / "isolation_forest.pkl"
 SCALERPATH = REPO_ROOT / "mbientcode-cloud" / "scaler.pkl"
+PPG_FILE = Path("/Users/jadechng/Downloads/S01L_running_ppg.npy")
 
 # Thresholds and file path can change that can be clinician defined
 rep_goal = 10
@@ -98,8 +99,8 @@ def read_imu_data(file_path, signal_column="ay",
 
 
 # HR Data
-def read_hr_data():
-    return load_ppg_data()
+def read_hr_data(ppg_file):
+    return load_ppg_metrics(ppg_file)
 
 
 # Patient State
@@ -125,11 +126,11 @@ def infer_patient_state(imu, hr):
     else:
         flags.append("Good Movement Quality")
 
-    if hr["bpm"] > hr_rest_max:
-        flags.append("Elevated Resting HR")
-        score += 1
-    else:
-        flags.append("Normal Resting HR")
+    # if hr["bpm"] > hr_rest_max:
+    #     flags.append("Elevated Resting HR")
+    #     score += 1
+    # else:
+    #     flags.append("Normal Resting HR")
 
     if hr["peak_hr_bpm"] > hr_active_max:
         flags.append("Elevated Active HR")
@@ -150,10 +151,11 @@ def infer_patient_state(imu, hr):
 # Main
 if __name__ == "__main__":
     imu = read_imu_data(FILEPATH)
-    hr = read_hr_data()
+    hr = read_hr_data(PPG_FILE)
     patient_state, flags = infer_patient_state(imu, hr)
 
     print("\n── Patient Session Summary ──────────────────")
+    print("\n── Movement Metrics (IMU) ──────────────────")
     print(f"  Accepted Reps:       {imu['accepted_reps']}")
     print(f"  Rep Durations:       {imu['rep_durations']} sec")
     print(f"  Avg. Rep Duration:   {imu['average_rep_duration']} sec/rep")
@@ -168,10 +170,11 @@ if __name__ == "__main__":
     print(f"  Rep Classifications: {imu['rep_classifications']}")
     print(f"  Overall Motion:      {imu['classification']}")
     print(f"  Total Duration:      {imu['duration']} sec")
+    print("\n── Cardiac Metrics (PPG) ──────────────────")
     print(f"  Pulse Rate:          {hr['bpm']} bpm")
     print(f"  Peak HR:             {hr['peak_hr_bpm']} bpm")
     print(f"  Time Above Exertion: {hr['time_above_max_hr_sec']} sec")
-    print(f"  Valid Coverage:      {hr['valid_signal_coverage_pct']}%")
+    print(f"  Valid Signal Coverage:      {hr['valid_signal_coverage_pct']}%")
 
     print(f"\n── Patient State: {patient_state}")
 
