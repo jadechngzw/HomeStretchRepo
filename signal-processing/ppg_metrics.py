@@ -4,11 +4,13 @@ from pathlib import Path
 
 sample_rate = 64.0
 max_hr = 140
-PPG_FILE = Path("C:/Users/ahasa/Documents/Fall2026Repos/PPG-Sport/dataset/S01L_running_ppg.npy")
+#PPG_FILE = Path("C:/Users/ahasa/Documents/Fall2026Repos/PPG-Sport/dataset/S01L_running_ppg.npy")
+PPG_FILE = Path("/Users/jadechng/Downloads/S01L_running_ppg.npy")
 
 
-def load_ppg_data():
-    data = np.load(PPG_FILE).flatten()
+
+def load_ppg_data(ppg_file):
+    data = np.load(ppg_file).flatten()
     return data
 
 
@@ -51,7 +53,7 @@ def print_metrics(metrics):
 
 
 if __name__ == "__main__":
-    data = load_ppg_data()
+    data = load_ppg_data(PPG_FILE)
     print(f"Loaded: {PPG_FILE.name} | Shape: {data.shape} | Sample Rate: {sample_rate} Hz")
     wd, m = analyze_ppg(data)
     metrics = extract_metrics(wd, m)
