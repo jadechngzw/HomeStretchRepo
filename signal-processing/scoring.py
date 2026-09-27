@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 from ppg_metrics import analyze_ppg, extract_metrics
 from read_watch_data import load_watch_data, load_ppg_metrics
+from live_guidance import run_live_guidance
 from imu_metrics import (
     segment_reps,
     classify_repetitions,
@@ -16,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FILEPATH = REPO_ROOT / "mbientcode" / "mbientdata" / "left_atypical_Accelerometer.csv" #path to IMU data 
 MODELPATH = REPO_ROOT / "mbientcode-cloud" / "isolation_forest.pkl"
 SCALERPATH = REPO_ROOT / "mbientcode-cloud" / "scaler.pkl"
-PPG_FILE = Path("/Users/jadechng/Downloads/S01L_running_ppg.npy")
+PPG_FILE = Path("C:/Users/ahasa/Documents/Fall2026Repos/PPG-Sport/dataset/S01L_running_ppg.npy")
 
 # Thresholds and file path can change that can be clinician defined
 rep_goal = 10
@@ -184,3 +185,5 @@ if __name__ == "__main__":
             print(f"  • {flag}")
     else:
         print("  • No flags")
+
+    run_live_guidance(imu, hr)
