@@ -345,17 +345,14 @@ if light_label:
         f"padding:3px 10px;border-radius:10px;'>{light_label}</span>"
     )
 
-st.markdown(
-    f"""
-    <div style="background-color:{bg};color:#1f2937;padding:18px 20px;border-radius:12px;">
-        {pill}
-        <div style="font-size:18px;font-weight:600;margin-top:{'10px' if pill else '0'};">
-            {case['message']}
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
+top_margin = "10px" if pill else "0"
+card_html = (
+    f'<div style="background-color:{bg};color:#1f2937;padding:18px 20px;border-radius:12px;">'
+    f"{pill}"
+    f'<div style="font-size:18px;font-weight:600;margin-top:{top_margin};">{case["message"]}</div>'
+    "</div>"
 )
+st.markdown(card_html, unsafe_allow_html=True)
 
 snoozed = st.session_state.adh_snoozed_until
 if snoozed and datetime.now() < snoozed:
