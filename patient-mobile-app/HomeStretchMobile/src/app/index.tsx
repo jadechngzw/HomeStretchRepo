@@ -4,15 +4,15 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  SafeAreaView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 export default function HomeScreen() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <LinearGradient
         colors={["#c4dcef", "#f7fafc", "#ffffff"]}
         locations={[0, 0.55, 1]}
@@ -20,7 +20,7 @@ export default function HomeScreen() {
       >
         {/* Main content */}
         <View style={styles.content}>
-          
+
           {/* HomeStretch logo */}
           <View style={styles.logoCircle}>
             <Ionicons
@@ -36,7 +36,7 @@ export default function HomeScreen() {
             <Text style={styles.name}>Jane!</Text>
           </View>
 
-          {/* Goal */}
+          {/* Today's goal */}
           <View style={styles.goalContainer}>
             <Text style={styles.goalTitle}>Today’s Goal:</Text>
             <Text style={styles.goalText}>
@@ -44,15 +44,14 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {/* Get Started */}
+          {/* Get Started button */}
           <Pressable
             style={({ pressed }) => [
               styles.startButton,
               pressed && styles.startButtonPressed,
             ]}
             onPress={() => {
-              // We'll connect this to the Session Overview screen next
-              console.log("Start session pressed");
+              router.push("/session");
             }}
           >
             <Text style={styles.startText}>Get Started</Text>
@@ -70,6 +69,7 @@ export default function HomeScreen() {
               style={styles.secondChevron}
             />
           </Pressable>
+
         </View>
 
         {/* Bottom navigation */}
@@ -78,9 +78,7 @@ export default function HomeScreen() {
           {/* Messages */}
           <Pressable
             style={styles.navItem}
-            onPress={() => {
-              console.log("Messages pressed");
-            }}
+            onPress={() => router.push("/messages")}
           >
             <Ionicons
               name="chatbox"
@@ -93,9 +91,7 @@ export default function HomeScreen() {
           {/* Exercise */}
           <Pressable
             style={styles.navItem}
-            onPress={() => {
-              console.log("Exercise pressed");
-            }}
+            onPress={() => router.push("/exercise")}
           >
             <Ionicons
               name="fitness"
@@ -108,9 +104,7 @@ export default function HomeScreen() {
           {/* Progress */}
           <Pressable
             style={styles.navItem}
-            onPress={() => {
-              console.log("Progress pressed");
-            }}
+            onPress={() => router.push("/progress")}
           >
             <Ionicons
               name="bar-chart"
@@ -121,6 +115,7 @@ export default function HomeScreen() {
           </Pressable>
 
         </View>
+
       </LinearGradient>
     </SafeAreaView>
   );
