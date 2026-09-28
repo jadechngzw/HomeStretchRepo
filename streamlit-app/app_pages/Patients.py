@@ -2,46 +2,166 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from numpy.random import default_rng
+import firebase_admin
+from firebase_admin import credentials, firestore
+import datetime
+
+st.set_page_config(layout="wide")
 
 # -----------------------
-# Setup
+# FIRESTORE SETUP
+# -----------------------
+if not firebase_admin._apps:
+    cred = credentials.Certificate("homestretch-pipeline-5f8f03e61254.json")
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+
+# -----------------------
+# GET SESSION DATA
+# -----------------------
+# def get_all_sessions():
+#     docs = db.collection("sessions").stream()
+
+#     sessions = []
+#     for doc in docs:
+#         d = doc.to_dict()
+#         d["id"] = doc.id
+
+#         # Real Firestore timestamp
+#         d["session_time"] = doc.create_time if hasattr(doc, "create_time") else None
+
+#         sessions.append(d)
+
+#     # newest first
+#     sessions = sorted(
+#         sessions,
+#         key=lambda x: x["session_time"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+#         reverse=True
+#     )
+
+#     return sessions
+
+def get_all_sessions():
+    docs = db.collection("sessions").stream()
+
+    sessions = []
+    for doc in docs:
+        d = doc.to_dict()
+        d["id"] = doc.id
+        d["session_time"] = doc.create_time if hasattr(doc, "create_time") else None
+        sessions.append(d)
+
+    # oldest first for numbering
+    sessions = sorted(
+        sessions,
+        key=lambda x: x["session_time"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    )
+
+    # assign S1, S2, S3...
+    for idx, s in enumerate(sessions, start=1):
+        s["session_label"] = f"S{idx}"
+
+    return sessions
+
+
+def get_latest_session():
+    sessions = get_all_sessions()
+    return sessions[0] if sessions else None
+
+
+def format_session_time(ts):
+    if ts is None:
+        return "Time unavailable"
+    return ts.astimezone().strftime("%b %d, %I:%M %p")
+
+
+def render_session_metrics(session):
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Reps", session.get("num_reps", "N/A"))
+    m2.metric("Duration", f"{round(session.get('duration_sec', 0), 1)} sec")
+    m3.metric("SNR", f"{round(session.get('snr_db', 0), 1)} dB")
+    m4.metric("Tremor", session.get("tremor_level", "N/A"))
+
+    if session.get("classification") == "Very Smooth":
+        st.success("Movement Quality: Very Smooth")
+    elif session.get("classification") == "Good Control":
+        st.success("Movement Quality: Good Control")
+    else:
+        st.warning(f"Movement Quality: {session.get('classification', 'Unknown')}")
+
+    st.markdown("### Tremor Ratio")
+    st.progress(float(session.get("tremor_ratio", 0.0)))
+    st.caption(f"{round(session.get('tremor_ratio', 0.0), 4)}")
+
+    st.markdown("### Session Details")
+    st.write(f"Duration: {round(session.get('duration_sec', 0), 1)} seconds")
+    st.write(f"Reps: {session.get('num_reps', 'N/A')}")
+    st.write(f"Signal Quality: {round(session.get('snr_db', 0), 1)} dB")
+    st.write(f"Classification: {session.get('classification', 'Unknown')}")
+    st.write(f"Tremor Level: {session.get('tremor_level', 'Unknown')}")
+
+    # New ML fields - only show if present
+    if "num_typical" in session or "num_atypical" in session:
+        st.markdown("### Repetition Quality")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Typical Reps", session.get("num_typical", "N/A"))
+        c2.metric("Atypical Reps", session.get("num_atypical", "N/A"))
+
+        atypical_ids = session.get("atypical_rep_ids", [])
+        if atypical_ids is None:
+            atypical_ids = []
+        c3.metric("Atypical IDs Count", len(atypical_ids))
+
+        st.write(f"Atypical Rep IDs: {atypical_ids if atypical_ids else 'None'}")
+
+    # Placeholder signal until real waveform is connected
+    signal = np.sin(np.linspace(0, 10, 100)) + np.random.normal(0, 0.1, 100)
+    st.markdown("### Movement Signal")
+    st.line_chart(signal)
+
+
+# -----------------------
+# SESSION STATE
 # -----------------------
 if "selected_session" not in st.session_state:
     st.session_state.selected_session = None
+
+if "selected_session_data" not in st.session_state:
+    st.session_state.selected_session_data = None
+
+if "selected_session_time" not in st.session_state:
+    st.session_state.selected_session_time = None
+
+if "selected_patient" not in st.session_state:
+    st.session_state.selected_patient = None
 
 if "page" not in st.session_state:
     st.session_state.page = "patients"
 
 if "program" not in st.session_state:
     st.session_state.program = []
-    
+
 rng = default_rng()
 
 st.title("Patients")
 
-if "selected_patient" not in st.session_state:
-    st.session_state.selected_patient = None
-
 # -----------------------
-# Generate Data
+# FAKE PATIENT TABLE DATA
 # -----------------------
 n = 20
 
 ages = rng.integers(35, 80, n)
-
 statuses = rng.choice(
     ["Active", "Needs Review", "Inactive"],
     size=n,
     p=[0.6, 0.3, 0.1]
 )
-
 last_activity = rng.choice(
     ["Today", "1 day ago", "3 days ago", "5 days ago", "10 days ago"],
     size=n
 )
-
 compliance = rng.integers(30, 100, n)
-
 notes_options = [
     "Reported difficulty, decrease in activity",
     "Fatigue reported",
@@ -49,21 +169,18 @@ notes_options = [
     "",
     "Balance issues noted"
 ]
-
 notes = rng.choice(notes_options, size=n)
 
-data = {
+df = pd.DataFrame({
     "Patient": [f"Patient {i+1}, {ages[i]}" for i in range(n)],
     "Status": statuses,
     "Last Activity": last_activity,
     "Compliance": compliance,
     "Notes": notes
-}
-
-df = pd.DataFrame(data)
+})
 
 # -----------------------
-# Helper: Status Colors
+# HELPER: STATUS COLORS
 # -----------------------
 def render_status(status):
     if status == "Active":
@@ -91,15 +208,13 @@ def render_status(status):
 # -----------------------
 # MAIN LOGIC
 # -----------------------
-
-# -------- PATIENT LIST --------
 if st.session_state.page == "patients":
 
     if st.session_state.selected_patient is None:
 
         st.subheader("Patient List")
 
-        col1, col2, col3, col4, col5, col6 = st.columns([2,1,1,2,2,1])
+        col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 2, 2, 1])
         col1.write("**Patient**")
         col2.write("**Status**")
         col3.write("**Last Activity**")
@@ -109,7 +224,7 @@ if st.session_state.page == "patients":
         st.divider()
 
         for i, row in df.iterrows():
-            col1, col2, col3, col4, col5, col6 = st.columns([2,1,1,2,2,1])
+            col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 2, 2, 1])
 
             col1.write(row["Patient"])
 
@@ -126,15 +241,10 @@ if st.session_state.page == "patients":
 
             if col6.button("View", key=f"btn_{i}"):
                 st.session_state.selected_patient = row["Patient"]
-                st.session_state.page = "patients"
-    # -------- PATIENT PROFILE --------
-    else:
 
+    else:
         patient = st.session_state.selected_patient
 
-        # -----------------------
-        # HEADER
-        # -----------------------
         col1, col2 = st.columns([1, 5])
 
         with col1:
@@ -144,15 +254,12 @@ if st.session_state.page == "patients":
             st.subheader(patient)
             st.caption("Left-side weakness")
             st.caption("Started HomeStretch: Jan 2026")
-
-            # Tags
             st.markdown("""
             <span style='background:#d0e7ff;padding:5px 10px;border-radius:10px;margin-right:5px;'>Stroke</span>
             <span style='background:#ffe066;padding:5px 10px;border-radius:10px;margin-right:5px;'>High Fall Risk</span>
             <span style='background:#d0e7ff;padding:5px 10px;border-radius:10px;'>Uses Cane</span>
             """, unsafe_allow_html=True)
 
-        # Summary bar
         st.markdown("""
         <div style='background:#e9f2fb;padding:10px;border-radius:10px;margin-top:10px;'>
             Home Activity: Stable &nbsp;&nbsp; • &nbsp;&nbsp; Adherence: Moderate &nbsp;&nbsp; • &nbsp;&nbsp; Last Active: Today
@@ -161,22 +268,16 @@ if st.session_state.page == "patients":
 
         st.divider()
 
-        # -----------------------
-        # TABS
-        # -----------------------
-        tab1, tab2 = st.tabs(["Information", "Session"])
+        tab1, tab2, tab3 = st.tabs(["Information", "Session", "Latest Session"])
 
-        # =======================
+        # -----------------------
         # INFORMATION TAB
-        # =======================
+        # -----------------------
         with tab1:
-
             colA, colB = st.columns(2)
 
-            # ---- Clinical Overview ----
             with colA:
                 st.markdown("### Clinical Overview")
-
                 st.markdown("""
                 **Stroke Type**  
                 Ischemic Stroke  
@@ -192,10 +293,8 @@ if st.session_state.page == "patients":
                 Stairs at home  
                 """)
 
-            # ---- Current Program ----
             with colB:
                 st.markdown("### Current Program")
-
                 st.markdown("""
                 **Frequency**  
                 3 sessions / week  
@@ -212,12 +311,11 @@ if st.session_state.page == "patients":
 
                 if st.button("Program Builder"):
                     st.session_state.page = "builder"
-            # ---- Functional Baseline ----
+
             colC, colD = st.columns(2)
 
             with colC:
                 st.markdown("### Functional Baseline")
-
                 st.markdown("""
                 **Gait**  
                 Independent (Supervision outdoors)  
@@ -228,7 +326,6 @@ if st.session_state.page == "patients":
 
             with colD:
                 st.markdown("### ")
-
                 st.markdown("""
                 **Sit to Stand**  
                 8 reps, Unassisted  
@@ -237,9 +334,7 @@ if st.session_state.page == "patients":
                 Moderate  
                 """)
 
-            # ---- Notes ----
             st.markdown("### Notes")
-
             st.info("""
             **Last entry – Feb 7**  
             Improved weight shifting.  
@@ -250,14 +345,12 @@ if st.session_state.page == "patients":
             colN1.button("View All Notes")
             colN2.button("Add Note")
 
-        # =======================
+        # -----------------------
         # SESSION TAB
-        # =======================
+        # -----------------------
         with tab2:
+            col1, col2 = st.columns(2)
 
-            col1, col2 = st.columns([1, 2])
-
-            # ---- LEFT SIDE ----
             with col1:
                 st.markdown("### Engagement Insights")
                 st.markdown("""
@@ -268,35 +361,91 @@ if st.session_state.page == "patients":
 
                 st.markdown("### Session Overview")
 
-                st.metric("Adherence", "82%")
-                st.metric("Sessions This Week", "3")
-                st.metric("Avg Duration", "28 min")
+                sessions = get_all_sessions()
 
-            # ---- RIGHT SIDE ----
+                if len(sessions) == 0:
+                    st.info("No session data available yet")
+                else:
+                    reps = [float(s.get("num_reps", 0)) for s in sessions]
+                    duration = [float(s.get("duration_sec", 0)) for s in sessions]
+                    labels = [s["session_label"] for s in sessions]
+
+                    chart_df = pd.DataFrame({
+                        "Session": labels,
+                        "Reps": reps,
+                        "Duration": duration
+                    })
+
+                    avg_reps = sum(reps) / len(reps)
+                    avg_duration = sum(duration) / len(duration)
+
+                    best_idx = int(np.argmax(reps))
+                    best_session_label = labels[best_idx]
+
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Avg Reps", round(avg_reps, 1))
+                    m2.metric("Avg Duration", f"{round(avg_duration, 1)} sec")
+                    m3.metric("Best Session", best_session_label)
+
+                    st.divider()
+
+                    st.markdown("#### Reps per Session")
+                    st.bar_chart(chart_df.set_index("Session")["Reps"])
+
+                    st.markdown("#### Duration Trend")
+                    st.line_chart(chart_df.set_index("Session")["Duration"])
+
             with col2:
+                sessions = get_all_sessions()
+
+                # newest first for display
+                display_sessions = list(reversed(sessions))
+
                 st.markdown("### Timeline")
 
-                for i in range(10):  # or your real session data
-                    date = f"Feb {25 - i*2}, 2026"
+                for i, s in enumerate(display_sessions):
+                    time_str = format_session_time(s.get("session_time"))
 
-                    if st.button(f"{date} | Completed in 28 min", key=f"session_{i}"):
-                        st.session_state.selected_session = date
+                    label = (
+                        f"{s['session_label']} | {time_str} | "
+                        f"{s.get('num_reps', 'N/A')} reps | "
+                        f"{round(s.get('duration_sec', 0), 1)} sec"
+                    )
+
+                    if st.button(label, key=f"session_{s['id']}"):
+                        st.session_state.selected_session = s["id"]
+                        st.session_state.selected_session_data = s
+                        st.session_state.selected_session_time = time_str
+                        st.session_state.selected_session_label = s["session_label"]
                         st.session_state.page = "session_detail"
 
+                    st.caption(
+                        f"{s.get('classification', 'Unknown')} • Tremor: {s.get('tremor_level', 'Unknown')}"
+                    )
         st.divider()
 
-        # Back button
+        with tab3:
+            latest = get_latest_session()
+
+            if latest is None:
+                st.info("No session data available yet")
+            else:
+                st.markdown("### Latest Session")
+                st.caption(format_session_time(latest.get("session_time")))
+                render_session_metrics(latest)
+
         if st.button("⬅ Back to Patients"):
             st.session_state.selected_patient = None
 
-# -------- PROGRAM BUILDER --------
+# -----------------------
+# PROGRAM BUILDER
+# -----------------------
 elif st.session_state.page == "builder":
 
     st.title("Program Builder")
 
-    col1, col2, col3 = st.columns([1,2,1])
+    col1, col2, col3 = st.columns([1, 2, 1])
 
-    # LEFT: Exercise Library
     with col1:
         st.subheader("Exercise Library")
 
@@ -315,12 +464,10 @@ elif st.session_state.page == "builder":
                     "reps": "8-10"
                 })
 
-    # MIDDLE: Program
     with col2:
         st.subheader("My Exercise Plan")
 
         for i, ex in enumerate(st.session_state.program):
-
             st.write(f"### {ex['name']}")
 
             c1, c2, c3 = st.columns(3)
@@ -334,7 +481,6 @@ elif st.session_state.page == "builder":
 
             st.divider()
 
-    # RIGHT: Schedule
     with col3:
         st.subheader("Schedule")
 
@@ -345,151 +491,29 @@ elif st.session_state.page == "builder":
 
     st.divider()
 
-    if st.button("⬅ Back to Profile"):
+    if st.button("⬅ Back to Patient Profile"):
         st.session_state.page = "patients"
-# -------- SESSION DETAIL PAGE --------
+
+# -----------------------
+# SESSION DETAIL PAGE
+# -----------------------
 elif st.session_state.page == "session_detail":
 
-    import numpy as np
+    session_data = st.session_state.selected_session_data
 
-    session = st.session_state.selected_session
+    session_label = st.session_state.get("selected_session_label", "Session")
+    session_time = st.session_state.get("selected_session_time")
 
-    st.title(session)
+    st.header("Session Details")
+    st.subheader(session_label)
 
-    # -----------------------
-    # FAKE DATA
-    # -----------------------
-    t = np.linspace(0, 60, 200)
-    imu_signal = np.sin(t / 3) + np.random.normal(0, 0.1, 200)
-    reps_signal = np.abs(np.sin(t / 5)) * 10
-    balance = np.random.normal(0.6, 0.1, 200)
+    if session_time:
+        st.caption(session_time)
 
-    symmetry_left = np.random.uniform(0.4, 0.7, 50)
-    symmetry_right = np.random.uniform(0.3, 0.6, 50)
+    if st.button("⬅ Back to Patient Profile"):
+        st.session_state.page = "patients"
 
-    rom_values = np.random.uniform(30, 90, 10)
-
-    # -----------------------
-    # TOP SUMMARY
-    # -----------------------
-    st.markdown("### Session Summary")
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Duration", "28 min")
-    m2.metric("Reps", "68")
-    m3.metric("Stability", "62%")
-    m4.metric("Fatigue", "3.8")
-
-    st.divider()
-
-    col1, col2 = st.columns(2)
-
-    # -----------------------
-    # LEFT COLUMN
-    # -----------------------
-    with col1:
-
-        st.subheader("Patient Video")
-        st.empty()
-
-        st.markdown("### Core Metrics")
-
-        st.progress(0.62)
-        st.caption("Alignment: 62%")
-
-        st.progress(0.62)
-        st.caption("Stability: 62%")
-
-        st.progress(0.42)
-        st.caption("Compensation Ratio: 0.42")
-
-        st.progress(0.62)
-        st.caption("Movement Speed: 62%")
-
-        st.markdown("### Movement Signal")
-        st.line_chart(imu_signal)
-
-        st.markdown("### Repetition Pattern")
-        st.area_chart(reps_signal)
-
-    # -----------------------
-    # RIGHT COLUMN
-    # -----------------------
-    with col2:
-
-        st.markdown("### Balance Over Time")
-        st.line_chart(balance)
-
-        st.markdown("### Left vs Right Symmetry")
-        sym_df = {
-            "Left": symmetry_left,
-            "Right": symmetry_right
-        }
-        st.bar_chart(sym_df)
-
-        st.markdown("### Range of Motion")
-        st.bar_chart(rom_values)
-
-        st.divider()
-
-        # -----------------------
-        # SPLIT CONTENT ACROSS BOTH COLUMNS
-        # -----------------------
-
-        exercises = [
-            ("Shoulder Rolls", 10, "2 min"),
-            ("Gentle Knee Extensions", 18, "4 min"),
-            ("Sit to Stand", 0, "0 min"),
-            ("Heel Raises", 20, "3 min"),
-            ("Seated Arm Raises", 20, "3 min"),
-            ("Weight Shifts", 15, "2 min"),
-        ]
-
-        left_ex = exercises[:3]
-        right_ex = exercises[3:]
-
-        # LEFT COLUMN (add exercises)
-        with col1:
-
-            st.markdown("### Exercises")
-
-            for name, reps, time in left_ex:
-                st.markdown(f"""
-                **{name}**  
-                Reps: {reps}  
-                Time: {time}
-                """)
-                st.divider()
-            
-            st.markdown("### Post Exercise Survey")
-
-            c1, c2 = st.columns(2)
-
-            with c1:
-                st.markdown("**Symptoms**")
-                st.success("Getting Better")
-
-                st.markdown("**Pain**")
-                st.metric("", "7")
-
-            with c2:
-                st.markdown("**Notes**")
-                st.caption("Felt tired today")               
-
-        # RIGHT COLUMN (rest of exercises + survey)
-        with col2:
-
-            st.markdown("### Exercises")
-
-            for name, reps, time in right_ex:
-                st.markdown(f"""
-                **{name}**  
-                Reps: {reps}  
-                Time: {time}
-                """)
-                st.divider()
-
-            st.markdown("### Skipped")
-            st.warning("Sit to Stand")
-
-            
+    if session_data is None:
+        st.info("No session selected.")
+    else:
+        render_session_metrics(session_data)

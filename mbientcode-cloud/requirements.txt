@@ -1,0 +1,9 @@
+flask
+gunicorn
+numpy
+pandas
+scipy
+scikit-learn
+joblib
+google-cloud-storage
+google-cloud-firestore
