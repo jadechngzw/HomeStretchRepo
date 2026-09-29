@@ -9,7 +9,7 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
@@ -74,15 +74,12 @@ export default function MessagesScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={styles.safeArea}
-      edges={["top", "bottom"]}
-    >
+    <View style={styles.screen}>
       <KeyboardAvoidingView
         style={styles.screen}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* Header */}
+        {/* HEADER */}
         <View style={styles.header}>
           {selectedProvider ? (
             <>
@@ -92,8 +89,8 @@ export default function MessagesScreen() {
               >
                 <Ionicons
                   name="arrow-back-circle-outline"
-                  size={31}
-                  color="#4A8BC3"
+                  size={29}
+                  color="#367FBD"
                 />
               </Pressable>
 
@@ -102,11 +99,13 @@ export default function MessagesScreen() {
               </Text>
             </>
           ) : (
-            <Text style={styles.headerTitle}>Messages</Text>
+            <Text style={styles.headerTitle}>
+              Messages
+            </Text>
           )}
         </View>
 
-        {/* Main content */}
+        {/* MAIN CONTENT */}
         {!selectedProvider ? (
           <View style={styles.listContainer}>
             {providers.map((provider) => (
@@ -116,7 +115,9 @@ export default function MessagesScreen() {
                   styles.providerCard,
                   pressed && styles.providerPressed,
                 ]}
-                onPress={() => setSelectedProvider(provider)}
+                onPress={() =>
+                  setSelectedProvider(provider)
+                }
               >
                 <View style={styles.providerInfo}>
                   <Text style={styles.providerName}>
@@ -138,7 +139,7 @@ export default function MessagesScreen() {
           </View>
         ) : (
           <View style={styles.chatContainer}>
-            {/* Message history */}
+            {/* MESSAGE HISTORY */}
             <ScrollView
               style={styles.messageList}
               contentContainerStyle={styles.messageContent}
@@ -162,25 +163,27 @@ export default function MessagesScreen() {
                   </Text>
                 </View>
               ) : (
-                messages[selectedProvider.id].map((message) => (
-                  <View
-                    key={message.id}
-                    style={[
-                      styles.messageBubble,
-                      message.sender === "patient"
-                        ? styles.patientMessage
-                        : styles.providerMessage,
-                    ]}
-                  >
-                    <Text style={styles.messageText}>
-                      {message.text}
-                    </Text>
-                  </View>
-                ))
+                messages[selectedProvider.id].map(
+                  (message) => (
+                    <View
+                      key={message.id}
+                      style={[
+                        styles.messageBubble,
+                        message.sender === "patient"
+                          ? styles.patientMessage
+                          : styles.providerMessage,
+                      ]}
+                    >
+                      <Text style={styles.messageText}>
+                        {message.text}
+                      </Text>
+                    </View>
+                  )
+                )
               )}
             </ScrollView>
 
-            {/* Message input */}
+            {/* MESSAGE INPUT */}
             <View style={styles.inputRow}>
               <TextInput
                 value={messageText}
@@ -209,69 +212,88 @@ export default function MessagesScreen() {
           </View>
         )}
 
-        {/* Bottom navigation */}
+        {/* BOTTOM NAVIGATION */}
         <View style={styles.bottomNav}>
           {/* Messages */}
           <Pressable
             style={styles.navItem}
-            onPress={() => router.replace("/messages")}
+            onPress={() =>
+              router.replace("/messages")
+            }
           >
             <Ionicons
               name="chatbox"
               size={25}
-              color="#4A8BC3"
+              color="#367FBD"
             />
-            <Text style={styles.navText}>Messages</Text>
+
+            <Text
+              style={[
+                styles.navText,
+                styles.activeNavText,
+              ]}
+            >
+              Messages
+            </Text>
           </Pressable>
 
           {/* Exercise */}
           <Pressable
             style={styles.navItem}
-            onPress={() => router.push("/exercise")}
+            onPress={() =>
+              router.push("/exercise")
+            }
           >
             <Ionicons
               name="fitness"
               size={27}
               color="#4A8BC3"
             />
-            <Text style={styles.navText}>Exercise</Text>
+
+            <Text style={styles.navText}>
+              Exercise
+            </Text>
           </Pressable>
 
           {/* Progress */}
           <Pressable
             style={styles.navItem}
-            onPress={() => router.push("/progress")}
+            onPress={() =>
+              router.push("/progress")
+            }
           >
             <Ionicons
               name="bar-chart"
               size={27}
               color="#4A8BC3"
             />
-            <Text style={styles.navText}>Progress</Text>
+
+            <Text style={styles.navText}>
+              Progress
+            </Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-
   screen: {
     flex: 1,
     backgroundColor: "#FFFFFF",
   },
 
+  /* =========================
+     HEADER
+     ========================= */
+
   header: {
-    height: 76,
+    height: 120,
+    paddingTop: 52,
     backgroundColor: "#C4DCEF",
     borderBottomWidth: 1,
     borderBottomColor: "#76A9D2",
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -280,15 +302,24 @@ const styles = StyleSheet.create({
     color: "#367FBD",
     fontSize: 26,
     fontWeight: "400",
-    paddingHorizontal: 55,
     textAlign: "center",
+    paddingHorizontal: 60,
   },
 
   backButton: {
     position: "absolute",
-    left: 14,
-    zIndex: 1,
+    left: 15,
+    top: 66,
+    width: 42,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
   },
+
+  /* =========================
+     PROVIDER LIST
+     ========================= */
 
   listContainer: {
     flex: 1,
@@ -329,6 +360,10 @@ const styles = StyleSheet.create({
     color: "#333333",
     marginTop: 3,
   },
+
+  /* =========================
+     CHAT
+     ========================= */
 
   chatContainer: {
     flex: 1,
@@ -393,6 +428,10 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 
+  /* =========================
+     MESSAGE INPUT
+     ========================= */
+
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -429,8 +468,13 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.92 }],
   },
 
+  /* =========================
+     BOTTOM NAV
+     ========================= */
+
   bottomNav: {
-    height: 68,
+    height: 88,
+    paddingBottom: 18,
     flexDirection: "row",
     backgroundColor: "#D9E8F4",
     borderTopWidth: 1,
@@ -449,5 +493,9 @@ const styles = StyleSheet.create({
     color: "#4A8BC3",
     fontSize: 12,
     marginTop: 3,
+  },
+
+  activeNavText: {
+    fontWeight: "600",
   },
 });
