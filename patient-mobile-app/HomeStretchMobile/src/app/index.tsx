@@ -4,147 +4,129 @@ import {
   Text,
   StyleSheet,
   Pressable,
+  Image,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 
 export default function HomeScreen() {
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
+    <View style={styles.screen}>
+      <StatusBar style="dark" />
+
       <LinearGradient
         colors={["#c4dcef", "#f7fafc", "#ffffff"]}
         locations={[0, 0.55, 1]}
         style={styles.container}
       >
-        {/* Main content */}
-        <View style={styles.content}>
 
-          {/* HomeStretch logo */}
-          <View style={styles.logoCircle}>
-            <Ionicons
-              name="accessibility-outline"
-              size={38}
-              color="#367fbd"
-            />
-          </View>
+        {/* TOP SECTION */}
+        <View style={styles.topSection}>
 
-          {/* Greeting */}
+          <Image
+            source={require("../../assets/images/logo-blue.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+
           <View style={styles.greetingContainer}>
-            <Text style={styles.greeting}>Good Morning</Text>
-            <Text style={styles.name}>Jane!</Text>
-          </View>
+            <Text style={styles.greeting}>
+              Good Morning
+            </Text>
 
-          {/* Today's goal */}
-          <View style={styles.goalContainer}>
-            <Text style={styles.goalTitle}>Today’s Goal:</Text>
-            <Text style={styles.goalText}>
-              30 minutes + 5 exercises
+            <Text style={styles.name}>
+              Jane!
             </Text>
           </View>
 
-          {/* Get Started button */}
+        </View>
+
+
+        {/* MIDDLE SECTION */}
+        <View style={styles.middleSection}>
+
+          <Text style={styles.goalTitle}>
+            Today’s Goal:
+          </Text>
+
+          <Text style={styles.goalText}>
+            30 minutes + 5 exercises
+          </Text>
+
+        </View>
+
+
+        {/* BOTTOM SECTION */}
+        <View style={styles.bottomSection}>
+
           <Pressable
             style={({ pressed }) => [
               styles.startButton,
               pressed && styles.startButtonPressed,
             ]}
-            onPress={() => {
-              router.push("/session");
-            }}
-          >
-            <Text style={styles.startText}>Get Started</Text>
-
-            <Ionicons
-              name="chevron-forward-outline"
-              size={30}
-              color="#4a8bc3"
-            />
-
-            <Ionicons
-              name="chevron-forward-outline"
-              size={30}
-              color="#4a8bc3"
-              style={styles.secondChevron}
-            />
-          </Pressable>
-
-        </View>
-
-        {/* Bottom navigation */}
-        <View style={styles.bottomNav}>
-
-          {/* Messages */}
-          <Pressable
-            style={styles.navItem}
-            onPress={() => router.push("/messages")}
-          >
-            <Ionicons
-              name="chatbox"
-              size={25}
-              color="#4a8bc3"
-            />
-            <Text style={styles.navText}>Messages</Text>
-          </Pressable>
-
-          {/* Exercise */}
-          <Pressable
-            style={styles.navItem}
             onPress={() => router.push("/exercise")}
           >
-            <Ionicons
-              name="fitness"
-              size={27}
-              color="#4a8bc3"
-            />
-            <Text style={styles.navText}>Exercise</Text>
-          </Pressable>
 
-          {/* Progress */}
-          <Pressable
-            style={styles.navItem}
-            onPress={() => router.push("/progress")}
-          >
-            <Ionicons
-              name="bar-chart"
-              size={27}
-              color="#4a8bc3"
-            />
-            <Text style={styles.navText}>Progress</Text>
+            <Text style={styles.startText}>
+              Get Started
+            </Text>
+
+            <View style={styles.chevrons}>
+              <Ionicons
+                name="chevron-forward-outline"
+                size={28}
+                color="#4A8BC3"
+              />
+
+              <Ionicons
+                name="chevron-forward-outline"
+                size={28}
+                color="#4A8BC3"
+                style={styles.secondChevron}
+              />
+            </View>
+
           </Pressable>
 
         </View>
 
       </LinearGradient>
-    </SafeAreaView>
+    </View>
   );
 }
 
+
 const styles = StyleSheet.create({
-  safeArea: {
+
+  screen: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#FFFFFF",
   },
 
   container: {
     flex: 1,
   },
 
-  content: {
+
+  /* ==========================
+     TOP THIRD
+     ========================== */
+
+  topSection: {
     flex: 1,
     alignItems: "center",
-    paddingTop: 55,
+    justifyContent: "center",
+
+    // Pushes logo/greeting slightly lower
+    paddingTop: 65,
   },
 
-  logoCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#e8f1f8",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 18,
+  logo: {
+    width: 72,
+    height: 72,
+    marginBottom: 16,
   },
 
   greetingContainer: {
@@ -154,44 +136,67 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 25,
     fontWeight: "600",
-    color: "#367fbd",
+    color: "#367FBD",
   },
 
   name: {
     fontSize: 23,
     fontWeight: "400",
-    color: "#367fbd",
-    marginTop: 2,
+    color: "#367FBD",
+    marginTop: 3,
   },
 
-  goalContainer: {
+
+  /* ==========================
+     MIDDLE THIRD
+     ========================== */
+
+  middleSection: {
+    flex: 1,
     alignItems: "center",
-    marginTop: 92,
+    justifyContent: "center",
+    paddingHorizontal: 20,
   },
 
   goalTitle: {
-    fontSize: 23,
+    fontSize: 24,
     fontWeight: "600",
-    color: "#367fbd",
+    color: "#367FBD",
+    textAlign: "center",
   },
 
   goalText: {
-    fontSize: 16,
-    color: "#367fbd",
-    marginTop: 2,
+    fontSize: 17,
+    color: "#367FBD",
+    textAlign: "center",
+    marginTop: 5,
+  },
+
+
+  /* ==========================
+     BOTTOM THIRD
+     ========================== */
+
+  bottomSection: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+
+    // Moves button slightly upward within bottom third
+    paddingBottom: 45,
   },
 
   startButton: {
+    minWidth: 190,
+    height: 55,
+    backgroundColor: "#D7E8F5",
+    borderRadius: 30,
+
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#d7e8f5",
-    borderRadius: 30,
-    paddingVertical: 10,
-    paddingLeft: 25,
-    paddingRight: 18,
-    marginTop: 88,
-    minWidth: 176,
+
+    paddingHorizontal: 24,
   },
 
   startButtonPressed: {
@@ -201,33 +206,18 @@ const styles = StyleSheet.create({
 
   startText: {
     fontSize: 18,
-    color: "#367fbd",
-    marginRight: 4,
+    color: "#367FBD",
+    fontWeight: "500",
+    marginRight: 7,
+  },
+
+  chevrons: {
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   secondChevron: {
     marginLeft: -15,
   },
 
-  bottomNav: {
-    height: 68,
-    flexDirection: "row",
-    backgroundColor: "#d9e8f4",
-    borderTopWidth: 1,
-    borderTopColor: "#7aaed5",
-  },
-
-  navItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRightWidth: 1,
-    borderRightColor: "#7aaed5",
-  },
-
-  navText: {
-    color: "#4a8bc3",
-    fontSize: 12,
-    marginTop: 3,
-  },
 });
