@@ -7,8 +7,23 @@ import {
   ScrollView,
 } from "react-native";
 
+import {
+  CameraView,
+  useCameraPermissions,
+} from "expo-camera";
+
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import {
+  router,
+  useLocalSearchParams,
+} from "expo-router";
+
+import { StatusBar } from "expo-status-bar";
+
+
+/* =====================================================
+   EXERCISE INFORMATION
+===================================================== */
 
 const exerciseInfo: Record<
   string,
@@ -36,6 +51,12 @@ const exerciseInfo: Record<
     sets: 2,
   },
 
+  "bicep-curls": {
+    name: "Bicep Curls",
+    reps: 10,
+    sets: 2,
+  },
+
   "heel-raises": {
     name: "Heel Raises",
     reps: 10,
@@ -55,23 +76,33 @@ const exerciseInfo: Record<
   },
 };
 
+
+/* =====================================================
+   EXERCISE DETAIL SCREEN
+===================================================== */
+
 export default function ExerciseDetailScreen() {
   const { id } = useLocalSearchParams<{
     id: string;
   }>();
 
   const exercise =
-    exerciseInfo[id || "sit-to-stand"] ??
-    exerciseInfo["sit-to-stand"];
+    exerciseInfo[id || "bicep-curls"] ??
+    exerciseInfo["bicep-curls"];
 
   const [reps, setReps] = useState(0);
 
+  const [permission, requestPermission] =
+    useCameraPermissions();
+
+
+  /* ===================================================
+     REP CONTROLS
+  =================================================== */
+
   const increaseRep = () => {
     setReps((current) =>
-      Math.min(
-        current + 1,
-        exercise.reps
-      )
+      Math.min(current + 1, exercise.reps)
     );
   };
 
@@ -81,24 +112,106 @@ export default function ExerciseDetailScreen() {
     );
   };
 
+
+  /* ===================================================
+     COMPLETE EXERCISE
+  =================================================== */
+
   const completeExercise = () => {
     router.replace("/exercise");
   };
 
+
+  /* ===================================================
+     CAMERA PERMISSION LOADING
+  =================================================== */
+
+  if (!permission) {
+    return (
+      <View style={styles.permissionScreen}>
+        <StatusBar style="dark" />
+
+        <Text style={styles.permissionTitle}>
+          Loading camera...
+        </Text>
+      </View>
+    );
+  }
+
+
+  /* ===================================================
+     CAMERA PERMISSION REQUEST
+  =================================================== */
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.permissionScreen}>
+        <StatusBar style="dark" />
+
+        <View style={styles.permissionCard}>
+
+          <Ionicons
+            name="camera-outline"
+            size={55}
+            color="#367FBD"
+          />
+
+          <Text style={styles.permissionTitle}>
+            Camera Access
+          </Text>
+
+          <Text style={styles.permissionText}>
+            HomeStretch uses your camera to show
+            your movement while you exercise.
+          </Text>
+
+          <Pressable
+            style={styles.permissionButton}
+            onPress={requestPermission}
+          >
+            <Text style={styles.permissionButtonText}>
+              Allow Camera
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.permissionBackButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.permissionBackText}>
+              Go Back
+            </Text>
+          </Pressable>
+
+        </View>
+      </View>
+    );
+  }
+
+
+  /* ===================================================
+     MAIN SCREEN
+  =================================================== */
+
   return (
     <View style={styles.screen}>
 
-      {/* HEADER */}
+      <StatusBar style="dark" />
+
+
+      {/* =================================================
+          HEADER
+      ================================================= */}
+
       <View style={styles.header}>
 
-        {/* BACK ARROW */}
         <Pressable
           style={styles.backButton}
           onPress={() => router.back()}
           hitSlop={10}
         >
           <Ionicons
-            name="arrow-back-circle-outline"
+            name="arrow-back"
             size={29}
             color="#367FBD"
           />
@@ -110,85 +223,82 @@ export default function ExerciseDetailScreen() {
 
       </View>
 
-      {/* CONTENT */}
+
+      {/* =================================================
+          CONTENT
+      ================================================= */}
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
 
-        {/* DEMO VIDEO */}
-        <View style={styles.videoContainer}>
+        {/* =================================================
+            CAMERA CARD
+        ================================================= */}
 
-          <Ionicons
-            name="play-circle-outline"
-            size={58}
-            color="#367FBD"
+        <View style={styles.cameraCard}>
+
+          <CameraView
+            style={styles.camera}
+            facing="front"
           />
 
-          <Text style={styles.videoLabel}>
-            Stickman Demo Video
-          </Text>
+          {/* Camera label */}
+          <View
+            style={styles.cameraLabelContainer}
+          >
+            <View style={styles.cameraLabel}>
+              <Ionicons
+                name="camera-outline"
+                size={20}
+                color="#367FBD"
+              />
 
-          <Text style={styles.videoPlaceholder}>
-            Video placeholder
-          </Text>
-
-        </View>
-
-
-        {/* VIDEO CONTROLS */}
-        <View style={styles.videoControls}>
-
-          <Pressable>
-            <Ionicons
-              name="play-skip-back"
-              size={29}
-              color="#4A8BC3"
-            />
-          </Pressable>
-
-          <Pressable>
-            <Ionicons
-              name="play-circle"
-              size={42}
-              color="#4A8BC3"
-            />
-          </Pressable>
-
-          <Pressable>
-            <Ionicons
-              name="play-skip-forward"
-              size={29}
-              color="#4A8BC3"
-            />
-          </Pressable>
-
-        </View>
-
-
-        {/* PATIENT CAMERA */}
-        <View style={styles.cameraContainer}>
-
-          <View style={styles.cameraIconCircle}>
-            <Ionicons
-              name="camera-outline"
-              size={34}
-              color="#367FBD"
-            />
+              <Text
+                style={styles.cameraLabelText}
+              >
+                Exercise Camera
+              </Text>
+            </View>
           </View>
 
-          <Text style={styles.videoLabel}>
-            Patient Camera
-          </Text>
 
-          <Text style={styles.videoPlaceholder}>
-            Live camera placeholder
+          {/* Rep counter overlay */}
+          <View style={styles.repOverlay}>
+
+            <Text style={styles.repOverlayNumber}>
+              {reps}
+            </Text>
+
+            <Text style={styles.repOverlayLabel}>
+              / {exercise.reps}
+            </Text>
+
+          </View>
+
+        </View>
+
+
+        {/* =================================================
+            CAMERA STATUS
+        ================================================= */}
+
+        <View style={styles.connectionRow}>
+
+          <View style={styles.connectionDot} />
+
+          <Text style={styles.connectionText}>
+            Camera active
           </Text>
 
         </View>
 
 
-        {/* REP COUNTER */}
+        {/* =================================================
+            REP COUNTER
+        ================================================= */}
+
         <View style={styles.counterCard}>
 
           <Text style={styles.counterLabel}>
@@ -232,7 +342,10 @@ export default function ExerciseDetailScreen() {
         </View>
 
 
-        {/* COMPLETE */}
+        {/* =================================================
+            COMPLETE
+        ================================================= */}
+
         <Pressable
           style={({ pressed }) => [
             styles.completeButton,
@@ -240,6 +353,7 @@ export default function ExerciseDetailScreen() {
           ]}
           onPress={completeExercise}
         >
+
           <Text style={styles.completeText}>
             Exercise Completed
           </Text>
@@ -249,91 +363,105 @@ export default function ExerciseDetailScreen() {
             size={24}
             color="#FFFFFF"
           />
+
         </Pressable>
 
       </ScrollView>
 
 
-      {/* BOTTOM NAV */}
-      <BottomNavigation />
+      {/* =================================================
+          BOTTOM NAVIGATION
+      ================================================= */}
 
-    </View>
-  );
-}
+      <View style={styles.bottomNav}>
 
-function BottomNavigation() {
-  return (
-    <View style={styles.bottomNav}>
-
-      <Pressable
-        style={styles.navItem}
-        onPress={() =>
-          router.push("/messages")
-        }
-      >
-        <Ionicons
-          name="chatbox"
-          size={25}
-          color="#4A8BC3"
-        />
-
-        <Text style={styles.navText}>
-          Messages
-        </Text>
-      </Pressable>
-
-
-      <Pressable
-        style={styles.navItem}
-        onPress={() =>
-          router.replace("/exercise")
-        }
-      >
-        <Ionicons
-          name="fitness"
-          size={27}
-          color="#367FBD"
-        />
-
-        <Text
-          style={[
-            styles.navText,
-            styles.activeNavText,
-          ]}
+        {/* Messages */}
+        <Pressable
+          style={styles.navItem}
+          onPress={() =>
+            router.push("/messages")
+          }
         >
-          Exercise
-        </Text>
-      </Pressable>
+          <Ionicons
+            name="chatbox"
+            size={25}
+            color="#4A8BC3"
+          />
+
+          <Text style={styles.navText}>
+            Messages
+          </Text>
+        </Pressable>
 
 
-      <Pressable
-        style={styles.navItem}
-        onPress={() =>
-          router.push("/progress")
-        }
-      >
-        <Ionicons
-          name="bar-chart"
-          size={27}
-          color="#4A8BC3"
-        />
+        {/* Exercise */}
+        <Pressable
+          style={styles.navItem}
+          onPress={() =>
+            router.replace("/exercise")
+          }
+        >
+          <Ionicons
+            name="fitness"
+            size={27}
+            color="#367FBD"
+          />
 
-        <Text style={styles.navText}>
-          Progress
-        </Text>
-      </Pressable>
+          <Text
+            style={[
+              styles.navText,
+              styles.activeNavText,
+            ]}
+          >
+            Exercise
+          </Text>
+        </Pressable>
+
+
+        {/* Progress */}
+        <Pressable
+          style={styles.navItem}
+          onPress={() =>
+            router.push("/progress")
+          }
+        >
+          <Ionicons
+            name="bar-chart"
+            size={27}
+            color="#4A8BC3"
+          />
+
+          <Text style={styles.navText}>
+            Progress
+          </Text>
+        </Pressable>
+
+      </View>
 
     </View>
   );
 }
+
+
+/* =====================================================
+   STYLES
+===================================================== */
 
 const styles = StyleSheet.create({
+
+  /* ==============================================
+     SCREEN
+  ============================================== */
+
   screen: {
     flex: 1,
     backgroundColor: "#FFFFFF",
   },
 
-  /* HEADER */
+
+  /* ==============================================
+     HEADER
+  ============================================== */
 
   header: {
     height: 120,
@@ -364,77 +492,133 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
-  /* CONTENT */
+
+  /* ==============================================
+     CONTENT
+  ============================================== */
 
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 20,
+    paddingBottom: 22,
   },
 
-  /* DEMO VIDEO */
 
-  videoContainer: {
-    height: 210,
+  /* ==============================================
+     CAMERA CARD
+  ============================================== */
+
+  cameraCard: {
+    height: 390,
+    width: "100%",
+    borderRadius: 20,
+    overflow: "hidden",
     backgroundColor: "#BFD8EC",
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
+    position: "relative",
   },
 
-  videoLabel: {
-    fontSize: 18,
-    color: "#111111",
-    marginTop: 8,
+  camera: {
+    flex: 1,
+  },
+
+
+  /* ==============================================
+     CAMERA LABEL
+  ============================================== */
+
+  cameraLabelContainer: {
+    position: "absolute",
+    top: 14,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+
+  cameraLabel: {
+    backgroundColor:
+      "rgba(255,255,255,0.90)",
+    paddingHorizontal: 15,
+    paddingVertical: 7,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  cameraLabelText: {
+    color: "#367FBD",
+    fontSize: 16,
     fontWeight: "500",
   },
 
-  videoPlaceholder: {
+
+  /* ==============================================
+     REP OVERLAY
+  ============================================== */
+
+  repOverlay: {
+    position: "absolute",
+    right: 14,
+    bottom: 14,
+    minWidth: 78,
+    backgroundColor:
+      "rgba(255,255,255,0.92)",
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+
+  repOverlayNumber: {
+    fontSize: 32,
+    fontWeight: "600",
+    color: "#367FBD",
+  },
+
+  repOverlayLabel: {
     fontSize: 13,
-    color: "#5C7182",
-    marginTop: 4,
+    color: "#444444",
   },
 
-  /* VIDEO CONTROLS */
 
-  videoControls: {
-    height: 60,
+  /* ==============================================
+     CAMERA STATUS
+  ============================================== */
+
+  connectionRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 65,
-  },
-
-  /* CAMERA */
-
-  cameraContainer: {
-    height: 210,
-    backgroundColor: "#BFD8EC",
-    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
+    marginTop: 9,
+    marginBottom: 10,
   },
 
-  cameraIconCircle: {
-    width: 58,
-    height: 58,
-    backgroundColor: "#DDEBF5",
-    borderRadius: 29,
-    alignItems: "center",
-    justifyContent: "center",
+  connectionDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: "#6BBF72",
+    marginRight: 6,
   },
 
-  /* REP COUNTER */
+  connectionText: {
+    color: "#555555",
+    fontSize: 13,
+  },
+
+
+  /* ==============================================
+     REP COUNTER
+  ============================================== */
 
   counterCard: {
-    minHeight: 180,
+    minHeight: 165,
     backgroundColor: "#BFD8EC",
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
-    paddingVertical: 15,
+    paddingVertical: 12,
   },
 
   counterLabel: {
@@ -443,10 +627,10 @@ const styles = StyleSheet.create({
   },
 
   counterNumber: {
-    fontSize: 70,
+    fontSize: 68,
+    lineHeight: 74,
     color: "#222222",
     fontWeight: "400",
-    lineHeight: 78,
   },
 
   counterTarget: {
@@ -457,7 +641,7 @@ const styles = StyleSheet.create({
   counterControls: {
     flexDirection: "row",
     gap: 15,
-    marginTop: 8,
+    marginTop: 7,
   },
 
   counterButton: {
@@ -469,7 +653,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  /* COMPLETE */
+
+  /* ==============================================
+     COMPLETE BUTTON
+  ============================================== */
 
   completeButton: {
     minHeight: 55,
@@ -491,7 +678,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  /* BOTTOM NAV */
+
+  /* ==============================================
+     BOTTOM NAV
+  ============================================== */
 
   bottomNav: {
     height: 88,
@@ -519,4 +709,67 @@ const styles = StyleSheet.create({
   activeNavText: {
     fontWeight: "600",
   },
+
+
+  /* ==============================================
+     CAMERA PERMISSION
+  ============================================== */
+
+  permissionScreen: {
+    flex: 1,
+    backgroundColor: "#EAF4FA",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 25,
+  },
+
+  permissionCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 25,
+    alignItems: "center",
+  },
+
+  permissionTitle: {
+    fontSize: 24,
+    fontWeight: "600",
+    color: "#367FBD",
+    marginTop: 15,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+
+  permissionText: {
+    fontSize: 16,
+    color: "#444444",
+    lineHeight: 23,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+
+  permissionButton: {
+    width: "100%",
+    height: 52,
+    backgroundColor: "#367FBD",
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  permissionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "600",
+  },
+
+  permissionBackButton: {
+    paddingVertical: 15,
+  },
+
+  permissionBackText: {
+    color: "#367FBD",
+    fontSize: 15,
+  },
+
 });

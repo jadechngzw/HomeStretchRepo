@@ -47,8 +47,8 @@ const exercises: Exercise[] = [
     duration: "~ 3 min",
   },
   {
-    id: "heel-raises",
-    name: "Heel Raises",
+    id: "bicep-curls",
+    name: "Bicep Curls",
     instructions: "2 sets | 10 reps",
     sets: 2,
     reps: 10,
