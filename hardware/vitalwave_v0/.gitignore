@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+firmware/vendor/
+firmware/build/
+recordings/
+*.o
+
+.cache/
+
+backups/
+desktop_preferences.json
+logs/
