@@ -5,22 +5,11 @@ IMU acceleration/gyro, temperature/humidity, four-colour PPG, live plots,
 configurable buttons, live charger status and local CSV recordings.
 The firmware always includes the 240mA charger policy. No standalone recording.
 
-**Status (25 September 2026):** protocol-v3 firmware and desktop upgrade. Earlier
-recordings showed keepalive failures under load. Control replies now have priority,
-readable status stays current under backpressure, and negotiated larger BLE packets
-batch samples. The GUI also fixes cross-sensor timestamp wrap, which could create
-a false ~49-day time-axis jump. Automated regression and simulated Mac GUI tests
-pass; the updated throughput, timing and disconnect behavior still require watch
-testing. Compilation/demo tests do not establish hardware stability.
-
-Backup: `backups/before-recording-upgrade-20260925.tgz`.
-
 ## Launch on this Mac
 
-The Python environment has already been installed:
 
 ```
-cd /Users/jadechng/Documents/ChatGPT/VITALWAVE/vitalwave_v0
+cd /HomeStretchRepo/hardware/vitalwave_v0
 ./Launch.command
 ```
 
@@ -47,7 +36,7 @@ both the new firmware and new app (protocol version 3).
 In J-Link Commander select NRF52840_XXAA, SWD, 100kHz, then:
 
 ```
-loadfile "/Users/jadechng/Documents/ChatGPT/VITALWAVE/vitalwave_v0/firmware/build/vitalwave_v0.hex"
+loadfile "/HomeStretchRepo/hardware/vitalwave_v0/firmware/build/vitalwave_v0.hex"
 r
 g
 ```
