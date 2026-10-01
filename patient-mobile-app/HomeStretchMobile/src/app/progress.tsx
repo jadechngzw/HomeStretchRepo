@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import SettingsButton from "../components/SettingsButton";
 import {
   View,
   Text,
@@ -138,6 +139,7 @@ export default function ProgressScreen() {
         {/* ===================================== */}
 
         <View style={styles.header}>
+          <SettingsButton />
           <Text style={styles.headerTitle}>
             Progress
           </Text>

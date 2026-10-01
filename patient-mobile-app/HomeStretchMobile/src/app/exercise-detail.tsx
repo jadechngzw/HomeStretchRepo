@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import SettingsButton from "../components/SettingsButton";
 import {
   View,
   Text,
@@ -258,7 +259,7 @@ export default function ExerciseDetailScreen() {
             color="#367FBD"
           />
         </Pressable>
-
+        <SettingsButton />
         <Text style={styles.headerTitle}>
           {exercise.name}
         </Text>

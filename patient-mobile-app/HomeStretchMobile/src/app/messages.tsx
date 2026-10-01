@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import SettingsButton from "../components/SettingsButton";
 import {
   View,
   Text,
@@ -81,6 +82,7 @@ export default function MessagesScreen() {
       >
         {/* HEADER */}
         <View style={styles.header}>
+          <SettingsButton color="#367FBD" />
           {selectedProvider ? (
             <>
               <Pressable

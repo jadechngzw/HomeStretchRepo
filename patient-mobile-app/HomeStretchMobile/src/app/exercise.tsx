@@ -1,4 +1,5 @@
 import React from "react";
+import SettingsButton from "../components/SettingsButton";
 import {
   View,
   Text,
@@ -78,6 +79,7 @@ export default function ExerciseScreen() {
 
       {/* HEADER */}
       <View style={styles.header}>
+        <SettingsButton />
         <Text style={styles.headerTitle}>
           Session Overview
         </Text>
