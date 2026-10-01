@@ -224,6 +224,21 @@ function BottomNavigation() {
         </Text>
       </Pressable>
 
+      <Pressable
+        style={styles.navItem}
+        onPress={() => router.push("/adherence")}
+      >
+        <Ionicons
+          name="shield-checkmark"
+          size={24}
+          color="#4A8BC3"
+        />
+
+        <Text style={styles.navText}>
+          Readiness
+        </Text>
+      </Pressable>
+
     </View>
   );
 }
