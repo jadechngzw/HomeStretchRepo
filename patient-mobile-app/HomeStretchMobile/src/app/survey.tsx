@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import SettingsButton from "../components/SettingsButton";
 import {
   View,
   Text,
@@ -423,7 +424,7 @@ export default function SurveyScreen() {
               color="#367FBD"
             />
           </Pressable>
-
+          <SettingsButton />
           <Text style={styles.headerTitle}>
             Post-Exercise Survey
           </Text>

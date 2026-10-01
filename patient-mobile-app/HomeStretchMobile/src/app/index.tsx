@@ -1,4 +1,6 @@
 import React from "react";
+import SettingsButton from "../components/SettingsButton";
+
 import {
   View,
   Text,
@@ -14,8 +16,9 @@ import { StatusBar } from "expo-status-bar";
 export default function HomeScreen() {
   return (
     <View style={styles.screen}>
+      
       <StatusBar style="dark" />
-
+      <SettingsButton/>
       <LinearGradient
         colors={["#c4dcef", "#f7fafc", "#ffffff"]}
         locations={[0, 0.55, 1]}
