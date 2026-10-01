@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -95,6 +95,39 @@ export default function ExerciseDetailScreen() {
   const [permission, requestPermission] =
     useCameraPermissions();
 
+  const [watchStatus, setWatchStatus] =
+    useState<"checking" | "connected" | "disconnected">(
+      "checking"
+    );
+
+  const [exerciseStarted, setExerciseStarted] =
+    useState(false);
+
+
+  /* ===================================================
+     SIMULATED WATCH CONNECTION
+  =================================================== */
+
+  useEffect(() => {
+    /*
+     * Simulates checking for the wearable connection.
+     *
+     * Right now:
+     * checking → connected
+     *
+     * Later, this is where we will replace the
+     * simulation with the real BLE connection.
+     */
+
+    setWatchStatus("checking");
+
+    const timer = setTimeout(() => {
+      setWatchStatus("connected");
+    }, 1800);
+
+    return () => clearTimeout(timer);
+  }, []);
+
 
   /* ===================================================
      REP CONTROLS
@@ -110,6 +143,15 @@ export default function ExerciseDetailScreen() {
     setReps((current) =>
       Math.max(current - 1, 0)
     );
+  };
+
+
+  /* ===================================================
+     START / END EXERCISE
+  =================================================== */
+
+  const toggleExercise = () => {
+    setExerciseStarted((current) => !current);
   };
 
 
@@ -140,7 +182,7 @@ export default function ExerciseDetailScreen() {
 
 
   /* ===================================================
-     CAMERA PERMISSION REQUEST
+     CAMERA PERMISSION
   =================================================== */
 
   if (!permission.granted) {
@@ -199,9 +241,9 @@ export default function ExerciseDetailScreen() {
       <StatusBar style="dark" />
 
 
-      {/* =================================================
+      {/* =============================================
           HEADER
-      ================================================= */}
+      ============================================= */}
 
       <View style={styles.header}>
 
@@ -224,18 +266,85 @@ export default function ExerciseDetailScreen() {
       </View>
 
 
-      {/* =================================================
+      {/* =============================================
           CONTENT
-      ================================================= */}
+      ============================================= */}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={
+          styles.scrollContent
+        }
       >
 
-        {/* =================================================
-            CAMERA CARD
-        ================================================= */}
+        {/* ==========================================
+            WATCH CONNECTION STATUS
+        ========================================== */}
+
+        <View style={styles.watchStatusRow}>
+
+          <View
+            style={[
+              styles.statusDot,
+
+              watchStatus === "connected"
+                ? styles.connectedDot
+                : styles.checkingDot,
+            ]}
+          />
+
+          <Text style={styles.watchStatusText}>
+
+            {watchStatus === "checking"
+              ? "Checking for connection to watch..."
+              : watchStatus === "connected"
+              ? "Watch connected"
+              : "Watch disconnected"}
+
+          </Text>
+
+        </View>
+
+
+        {/* ==========================================
+            START / END EXERCISE
+        ========================================== */}
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.startExerciseButton,
+
+            exerciseStarted &&
+              styles.endExerciseButton,
+
+            pressed &&
+              styles.startExercisePressed,
+          ]}
+          onPress={toggleExercise}
+        >
+
+          <Ionicons
+            name={
+              exerciseStarted
+                ? "stop-circle-outline"
+                : "play-circle-outline"
+            }
+            size={24}
+            color="#FFFFFF"
+          />
+
+          <Text style={styles.startExerciseText}>
+            {exerciseStarted
+              ? "End Exercise"
+              : "Start Exercise"}
+          </Text>
+
+        </Pressable>
+
+
+        {/* ==========================================
+            CAMERA
+        ========================================== */}
 
         <View style={styles.cameraCard}>
 
@@ -244,34 +353,41 @@ export default function ExerciseDetailScreen() {
             facing="front"
           />
 
+
           {/* Camera label */}
           <View
-            style={styles.cameraLabelContainer}
+            style={
+              styles.cameraLabelContainer
+            }
           >
             <View style={styles.cameraLabel}>
-              <Ionicons
-                name="camera-outline"
-                size={20}
-                color="#367FBD"
+
+              <View
+                style={styles.cameraStatusDot}
               />
 
               <Text
                 style={styles.cameraLabelText}
               >
-                Exercise Camera
+                Camera active
               </Text>
+
             </View>
           </View>
 
 
-          {/* Rep counter overlay */}
+          {/* Rep counter over camera */}
           <View style={styles.repOverlay}>
 
-            <Text style={styles.repOverlayNumber}>
+            <Text
+              style={styles.repOverlayNumber}
+            >
               {reps}
             </Text>
 
-            <Text style={styles.repOverlayLabel}>
+            <Text
+              style={styles.repOverlayLabel}
+            >
               / {exercise.reps}
             </Text>
 
@@ -280,24 +396,9 @@ export default function ExerciseDetailScreen() {
         </View>
 
 
-        {/* =================================================
-            CAMERA STATUS
-        ================================================= */}
-
-        <View style={styles.connectionRow}>
-
-          <View style={styles.connectionDot} />
-
-          <Text style={styles.connectionText}>
-            Camera active
-          </Text>
-
-        </View>
-
-
-        {/* =================================================
+        {/* ==========================================
             REP COUNTER
-        ================================================= */}
+        ========================================== */}
 
         <View style={styles.counterCard}>
 
@@ -313,7 +414,9 @@ export default function ExerciseDetailScreen() {
             of {exercise.reps}
           </Text>
 
-          <View style={styles.counterControls}>
+          <View
+            style={styles.counterControls}
+          >
 
             <Pressable
               style={styles.counterButton}
@@ -342,14 +445,15 @@ export default function ExerciseDetailScreen() {
         </View>
 
 
-        {/* =================================================
-            COMPLETE
-        ================================================= */}
+        {/* ==========================================
+            COMPLETE EXERCISE
+        ========================================== */}
 
         <Pressable
           style={({ pressed }) => [
             styles.completeButton,
-            pressed && styles.completePressed,
+            pressed &&
+              styles.completePressed,
           ]}
           onPress={completeExercise}
         >
@@ -369,9 +473,9 @@ export default function ExerciseDetailScreen() {
       </ScrollView>
 
 
-      {/* =================================================
+      {/* =============================================
           BOTTOM NAVIGATION
-      ================================================= */}
+      ============================================= */}
 
       <View style={styles.bottomNav}>
 
@@ -499,8 +603,71 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 12,
     paddingBottom: 22,
+  },
+
+
+  /* ==============================================
+     WATCH STATUS
+  ============================================== */
+
+  watchStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+
+  statusDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    marginRight: 7,
+  },
+
+  checkingDot: {
+    backgroundColor: "#E5B84B",
+  },
+
+  connectedDot: {
+    backgroundColor: "#55B96A",
+  },
+
+  watchStatusText: {
+    fontSize: 13,
+    color: "#555555",
+  },
+
+
+  /* ==============================================
+     START / END BUTTON
+  ============================================== */
+
+  startExerciseButton: {
+    height: 50,
+    backgroundColor: "#367FBD",
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 7,
+    marginBottom: 12,
+  },
+
+  endExerciseButton: {
+    backgroundColor: "#C95D62",
+  },
+
+  startExercisePressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.99 }],
+  },
+
+  startExerciseText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "600",
   },
 
 
@@ -537,17 +704,24 @@ const styles = StyleSheet.create({
   cameraLabel: {
     backgroundColor:
       "rgba(255,255,255,0.90)",
-    paddingHorizontal: 15,
+    paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 7,
+  },
+
+  cameraStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#55B96A",
   },
 
   cameraLabelText: {
     color: "#367FBD",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "500",
   },
 
@@ -582,32 +756,6 @@ const styles = StyleSheet.create({
 
 
   /* ==============================================
-     CAMERA STATUS
-  ============================================== */
-
-  connectionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 9,
-    marginBottom: 10,
-  },
-
-  connectionDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    backgroundColor: "#6BBF72",
-    marginRight: 6,
-  },
-
-  connectionText: {
-    color: "#555555",
-    fontSize: 13,
-  },
-
-
-  /* ==============================================
      REP COUNTER
   ============================================== */
 
@@ -617,6 +765,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: 14,
     marginBottom: 14,
     paddingVertical: 12,
   },
@@ -655,7 +804,7 @@ const styles = StyleSheet.create({
 
 
   /* ==============================================
-     COMPLETE BUTTON
+     COMPLETE
   ============================================== */
 
   completeButton: {
@@ -712,7 +861,7 @@ const styles = StyleSheet.create({
 
 
   /* ==============================================
-     CAMERA PERMISSION
+     PERMISSION SCREEN
   ============================================== */
 
   permissionScreen: {
