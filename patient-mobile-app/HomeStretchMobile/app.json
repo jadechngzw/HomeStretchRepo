@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "HomeStretchMobile",
+    "slug": "homestretch-mobile",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "HomeStretch uses your camera to provide exercise guidance."
+        }
+      ]
+    ]
+  }
+}

@@ -12,6 +12,7 @@ pg = st.navigation([
     st.Page("app_pages2/Exercise.py", title="Exercise", icon=None),
     st.Page("app_pages2/Progress.py", title="Progress", icon=None),
     st.Page("app_pages2/Progress 1.py", title="Progress_1", icon=None),
+    st.Page("app_pages2/Adherence.py", title="Patient_Adherence", icon=None),
 ])
 
 pg.run()
