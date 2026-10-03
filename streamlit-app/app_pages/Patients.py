@@ -1,12 +1,31 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from numpy.random import default_rng
+from pathlib import Path
 import firebase_admin
 from firebase_admin import credentials, firestore
 import datetime
 
 st.set_page_config(layout="wide")
+
+# =====================================================================
+# CONFIG - adjust these if your paths / Firestore field names differ
+# =====================================================================
+
+# Replace with the path to your HomeStretch.xlsx file.
+DATA_FILE = Path("C:/Users/TCO9.DSONE/HomeStretchRepo/Data.xlsx")
+
+# Firestore field on each session doc that links it to a patient.
+# ASSUMPTION - update if your schema uses a different field name.
+# This should match the "Participant ID" values in the Excel file.
+SESSION_PATIENT_FIELD = "participant_id"
+
+# Firestore field holding a patient's reported pain score (0-10) on a
+# session. ASSUMPTION - there is no pain data in the Excel file, so this
+# is expected to come from Firestore like your other session metrics
+# (num_reps, tremor_level, etc.). Update the field name if yours differs.
+SESSION_PAIN_FIELD = "pain_level"
+PAIN_ALERT_THRESHOLD = 8
 
 # -----------------------
 # FIRESTORE SETUP
@@ -17,33 +36,102 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-# -----------------------
-# GET SESSION DATA
-# -----------------------
-# def get_all_sessions():
-#     docs = db.collection("sessions").stream()
 
-#     sessions = []
-#     for doc in docs:
-#         d = doc.to_dict()
-#         d["id"] = doc.id
+# =====================================================================
+# PATIENT ROSTER (from Excel) - replaces the old randomly-generated list
+# =====================================================================
+@st.cache_data
+def load_patient_roster(path):
+    """
+    Reads the Typical / Atypical / Participant Identification sheets and
+    builds one row per patient with their typical & atypical recording
+    counts, matched by Participant ID.
+    """
+    xl = pd.ExcelFile(path)
+    typical = xl.parse("Typical")
+    atypical = xl.parse("Atypical")
+    ids = xl.parse("Participant Identification")
 
-#         # Real Firestore timestamp
-#         d["session_time"] = doc.create_time if hasattr(doc, "create_time") else None
+    # the source sheet has trailing-space column names ("Exercize ", etc.)
+    for d in (typical, atypical, ids):
+        d.columns = [c.strip() for c in d.columns]
 
-#         sessions.append(d)
+    ids["Participant"] = ids["Participant"].astype(str).str.strip()
+    typical["Exercize"] = typical["Exercize"].astype(str).str.strip()
+    atypical["Exercize"] = atypical["Exercize"].astype(str).str.strip()
 
-#     # newest first
-#     sessions = sorted(
-#         sessions,
-#         key=lambda x: x["session_time"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
-#         reverse=True
-#     )
+    typical_counts = typical.groupby("Participant ID").size().rename("Typical Count")
+    atypical_counts = atypical.groupby("Participant ID").size().rename("Atypical Count")
 
-#     return sessions
+    roster = ids.set_index("Participant ID").join([typical_counts, atypical_counts])
+    roster[["Typical Count", "Atypical Count"]] = (
+        roster[["Typical Count", "Atypical Count"]].fillna(0).astype(int)
+    )
+    roster["Total Recordings"] = roster["Typical Count"] + roster["Atypical Count"]
+    roster["Atypical %"] = np.where(
+        roster["Total Recordings"] > 0,
+        (roster["Atypical Count"] / roster["Total Recordings"] * 100).round(1),
+        0.0,
+    )
+    roster["Typical %"] = (100 - roster["Atypical %"]).round(1)
 
-def get_all_sessions():
-    docs = db.collection("sessions").stream()
+    # which exercises each patient has recordings for
+    all_rows = pd.concat(
+        [typical[["Participant ID", "Exercize"]], atypical[["Participant ID", "Exercize"]]]
+    )
+    exercises = all_rows.groupby("Participant ID")["Exercize"].apply(
+        lambda s: ", ".join(sorted(set(s)))
+    )
+    roster["Exercises"] = exercises
+
+    # free-text notes attached to atypical recordings (e.g. "only the
+    # last rep is atypical")
+    if "Notes" in atypical.columns:
+        notes_src = atypical.dropna(subset=["Notes"])
+        notes = notes_src.groupby("Participant ID")["Notes"].apply(
+            lambda s: "; ".join(s.astype(str))
+        )
+        roster["Notes"] = notes
+
+    roster["Notes"] = roster.get("Notes", pd.Series(dtype=str)).fillna("")
+    roster = roster.reset_index()  # Participant ID back to a column
+
+    return roster, typical, atypical
+
+
+def derive_status(row):
+    """
+    Placeholder status heuristic since the Excel file has no
+    activity/adherence data: flags patients whose recorded reps were
+    mostly atypical for review. Replace with real adherence logic once
+    that data source is wired in.
+    """
+    if row["Total Recordings"] == 0:
+        return "Inactive"
+    elif row["Atypical %"] >= 30:
+        return "Needs Review"
+    else:
+        return "Active"
+
+
+try:
+    roster_df, typical_df, atypical_df = load_patient_roster(DATA_FILE)
+    roster_load_error = None
+except Exception as e:
+    roster_df = pd.DataFrame()
+    typical_df = pd.DataFrame()
+    atypical_df = pd.DataFrame()
+    roster_load_error = str(e)
+
+
+# =====================================================================
+# SESSION DATA (Firestore) - now filterable per patient
+# =====================================================================
+def get_all_sessions(patient_id=None):
+    query = db.collection("sessions")
+    if patient_id is not None:
+        query = query.where(SESSION_PATIENT_FIELD, "==", patient_id)
+    docs = query.stream()
 
     sessions = []
     for doc in docs:
@@ -58,22 +146,48 @@ def get_all_sessions():
         key=lambda x: x["session_time"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
     )
 
-    # assign S1, S2, S3...
     for idx, s in enumerate(sessions, start=1):
         s["session_label"] = f"S{idx}"
 
     return sessions
 
 
-def get_latest_session():
-    sessions = get_all_sessions()
-    return sessions[0] if sessions else None
+def get_latest_session(patient_id=None):
+    sessions = get_all_sessions(patient_id)
+    return sessions[-1] if sessions else None
+
+
+@st.cache_data(ttl=60)
+def get_latest_pain(patient_id):
+    """Most recent reported pain score (0-10) for this patient, or None
+    if no sessions / no pain field recorded yet."""
+    sessions = get_all_sessions(patient_id)
+    if not sessions:
+        return None
+    latest = sessions[-1]  # get_all_sessions returns oldest -> newest
+    return latest.get(SESSION_PAIN_FIELD)
 
 
 def format_session_time(ts):
     if ts is None:
         return "Time unavailable"
     return ts.astimezone().strftime("%b %d, %I:%M %p")
+
+
+def render_pain_flag(pain_value, inline=False):
+    """Red flag shown when the latest reported pain is at/above threshold."""
+    if pain_value is None:
+        return
+    if pain_value >= PAIN_ALERT_THRESHOLD:
+        msg = f"🚩 Pain reported at {pain_value}/10 — contact patient"
+        if inline:
+            st.markdown(
+                f"<span style='background:#ff6b6b;color:white;padding:3px 10px;"
+                f"border-radius:10px;font-size:12px;'>{msg}</span>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.error(msg)
 
 
 def render_session_metrics(session):
@@ -90,6 +204,14 @@ def render_session_metrics(session):
     else:
         st.warning(f"Movement Quality: {session.get('classification', 'Unknown')}")
 
+    pain_value = session.get(SESSION_PAIN_FIELD)
+    if pain_value is not None:
+        st.markdown("### Pain")
+        p1, p2 = st.columns([1, 3])
+        p1.metric("Reported Pain", f"{pain_value}/10")
+        with p2:
+            render_pain_flag(pain_value)
+
     st.markdown("### Tremor Ratio")
     st.progress(float(session.get("tremor_ratio", 0.0)))
     st.caption(f"{round(session.get('tremor_ratio', 0.0), 4)}")
@@ -101,7 +223,6 @@ def render_session_metrics(session):
     st.write(f"Classification: {session.get('classification', 'Unknown')}")
     st.write(f"Tremor Level: {session.get('tremor_level', 'Unknown')}")
 
-    # New ML fields - only show if present
     if "num_typical" in session or "num_atypical" in session:
         st.markdown("### Repetition Quality")
         c1, c2, c3 = st.columns(3)
@@ -115,7 +236,6 @@ def render_session_metrics(session):
 
         st.write(f"Atypical Rep IDs: {atypical_ids if atypical_ids else 'None'}")
 
-    # Placeholder signal until real waveform is connected
     signal = np.sin(np.linspace(0, 10, 100)) + np.random.normal(0, 0.1, 100)
     st.markdown("### Movement Signal")
     st.line_chart(signal)
@@ -124,60 +244,19 @@ def render_session_metrics(session):
 # -----------------------
 # SESSION STATE
 # -----------------------
-if "selected_session" not in st.session_state:
-    st.session_state.selected_session = None
-
-if "selected_session_data" not in st.session_state:
-    st.session_state.selected_session_data = None
-
-if "selected_session_time" not in st.session_state:
-    st.session_state.selected_session_time = None
-
-if "selected_patient" not in st.session_state:
-    st.session_state.selected_patient = None
-
-if "page" not in st.session_state:
-    st.session_state.page = "patients"
-
-if "program" not in st.session_state:
-    st.session_state.program = []
-
-rng = default_rng()
+for key, default in {
+    "selected_session": None,
+    "selected_session_data": None,
+    "selected_session_time": None,
+    "selected_patient": None,     # display name shown in the UI
+    "selected_patient_id": None,  # real Participant ID from the Excel roster
+    "page": "patients",
+    "program": [],
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 st.title("Patients")
-
-# -----------------------
-# FAKE PATIENT TABLE DATA
-# -----------------------
-n = 20
-
-ages = rng.integers(35, 80, n)
-statuses = rng.choice(
-    ["Active", "Needs Review", "Inactive"],
-    size=n,
-    p=[0.6, 0.3, 0.1]
-)
-last_activity = rng.choice(
-    ["Today", "1 day ago", "3 days ago", "5 days ago", "10 days ago"],
-    size=n
-)
-compliance = rng.integers(30, 100, n)
-notes_options = [
-    "Reported difficulty, decrease in activity",
-    "Fatigue reported",
-    "Improving steadily",
-    "",
-    "Balance issues noted"
-]
-notes = rng.choice(notes_options, size=n)
-
-df = pd.DataFrame({
-    "Patient": [f"Patient {i+1}, {ages[i]}" for i in range(n)],
-    "Status": statuses,
-    "Last Activity": last_activity,
-    "Compliance": compliance,
-    "Notes": notes
-})
 
 # -----------------------
 # HELPER: STATUS COLORS
@@ -214,36 +293,65 @@ if st.session_state.page == "patients":
 
         st.subheader("Patient List")
 
-        col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 2, 2, 1])
-        col1.write("**Patient**")
-        col2.write("**Status**")
-        col3.write("**Last Activity**")
-        col4.write("**Compliance**")
-        col5.write("**Notes**")
+        if roster_load_error:
+            st.error(
+                f"Couldn't load the patient roster from {DATA_FILE}:\n\n{roster_load_error}\n\n"
+                "Check that DATA_FILE at the top of this script points to your HomeStretch.xlsx."
+            )
+        elif roster_df.empty:
+            st.info("No patients found in the Excel roster.")
+        else:
+            col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1, 1, 1.5, 2, 1, 1])
+            col1.write("**Patient**")
+            col2.write("**Status**")
+            col3.write("**Recordings**")
+            col4.write("**Typical %**")
+            col5.write("**Notes**")
+            col7.write("**Pain**")
 
-        st.divider()
+            st.divider()
 
-        for i, row in df.iterrows():
-            col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 2, 2, 1])
+            for _, row in roster_df.iterrows():
+                col1, col2, col3, col4, col5, col6, col7 = st.columns([2, 1, 1, 1.5, 2, 1, 1])
 
-            col1.write(row["Patient"])
+                pid = int(row["Participant ID"])
+                display_name = f"{row['Participant']} (ID {pid})"
 
-            with col2:
-                render_status(row["Status"])
+                col1.write(display_name)
 
-            col3.write(row["Last Activity"])
+                with col2:
+                    render_status(derive_status(row))
 
-            with col4:
-                st.progress(row["Compliance"] / 100)
-                st.caption(f"{row['Compliance']}%")
+                col3.write(f"{int(row['Total Recordings'])} ({int(row['Typical Count'])}T / {int(row['Atypical Count'])}A)")
 
-            col5.write(row["Notes"])
+                with col4:
+                    st.progress(row["Typical %"] / 100)
+                    st.caption(f"{row['Typical %']}%")
 
-            if col6.button("View", key=f"btn_{i}"):
-                st.session_state.selected_patient = row["Patient"]
+                col5.write(row["Notes"] if row["Notes"] else "—")
+
+                with col7:
+                    latest_pain = get_latest_pain(pid)
+                    if latest_pain is not None and latest_pain >= PAIN_ALERT_THRESHOLD:
+                        st.markdown(
+                            "<span style='background:#ff6b6b;color:white;padding:3px 8px;"
+                            "border-radius:10px;font-size:12px;'>🚩 Pain</span>",
+                            unsafe_allow_html=True,
+                        )
+
+                if col6.button("View", key=f"btn_{pid}"):
+                    st.session_state.selected_patient = row["Participant"]
+                    st.session_state.selected_patient_id = pid
 
     else:
         patient = st.session_state.selected_patient
+        pid = st.session_state.selected_patient_id
+
+        patient_row = None
+        if not roster_df.empty and pid is not None:
+            matches = roster_df[roster_df["Participant ID"] == pid]
+            if not matches.empty:
+                patient_row = matches.iloc[0]
 
         col1, col2 = st.columns([1, 5])
 
@@ -251,7 +359,7 @@ if st.session_state.page == "patients":
             st.image("person.jpg", width="content")
 
         with col2:
-            st.subheader(patient)
+            st.subheader(f"{patient} (ID {pid})")
             st.caption("Left-side weakness")
             st.caption("Started HomeStretch: Jan 2026")
             st.markdown("""
@@ -259,6 +367,9 @@ if st.session_state.page == "patients":
             <span style='background:#ffe066;padding:5px 10px;border-radius:10px;margin-right:5px;'>High Fall Risk</span>
             <span style='background:#d0e7ff;padding:5px 10px;border-radius:10px;'>Uses Cane</span>
             """, unsafe_allow_html=True)
+
+        latest_pain = get_latest_pain(pid)
+        render_pain_flag(latest_pain)
 
         st.markdown("""
         <div style='background:#e9f2fb;padding:10px;border-radius:10px;margin-top:10px;'>
@@ -334,6 +445,31 @@ if st.session_state.page == "patients":
                 Moderate  
                 """)
 
+            # ---- Recorded Calibration Data (from the Excel roster) ----
+            st.markdown("### Recorded Calibration Data")
+            st.caption("From HomeStretch.xlsx — Typical / Atypical recordings used to build this patient's movement profile.")
+
+            if patient_row is None:
+                st.info("No recordings found for this patient in the Excel file.")
+            else:
+                r1, r2, r3 = st.columns(3)
+                r1.metric("Typical Recordings", int(patient_row["Typical Count"]))
+                r2.metric("Atypical Recordings", int(patient_row["Atypical Count"]))
+                r3.metric("Typical %", f"{patient_row['Typical %']}%")
+                st.write(f"**Exercises recorded:** {patient_row['Exercises'] or '—'}")
+                if patient_row["Notes"]:
+                    st.caption(f"Notes: {patient_row['Notes']}")
+
+                with st.expander("View recording files for this patient"):
+                    pt_typical = typical_df[typical_df["Participant ID"] == pid]
+                    pt_atypical = atypical_df[atypical_df["Participant ID"] == pid]
+                    if not pt_typical.empty:
+                        st.markdown("**Typical**")
+                        st.dataframe(pt_typical[["Exercize", "Left or Right", "Filename"]], hide_index=True)
+                    if not pt_atypical.empty:
+                        st.markdown("**Atypical**")
+                        st.dataframe(pt_atypical[["Exercize", "Left or Right", "Filename"]], hide_index=True)
+
             st.markdown("### Notes")
             st.info("""
             **Last entry – Feb 7**  
@@ -361,7 +497,7 @@ if st.session_state.page == "patients":
 
                 st.markdown("### Session Overview")
 
-                sessions = get_all_sessions()
+                sessions = get_all_sessions(pid)
 
                 if len(sessions) == 0:
                     st.info("No session data available yet")
@@ -396,9 +532,7 @@ if st.session_state.page == "patients":
                     st.line_chart(chart_df.set_index("Session")["Duration"])
 
             with col2:
-                sessions = get_all_sessions()
-
-                # newest first for display
+                sessions = get_all_sessions(pid)
                 display_sessions = list(reversed(sessions))
 
                 st.markdown("### Timeline")
@@ -419,13 +553,15 @@ if st.session_state.page == "patients":
                         st.session_state.selected_session_label = s["session_label"]
                         st.session_state.page = "session_detail"
 
-                    st.caption(
-                        f"{s.get('classification', 'Unknown')} • Tremor: {s.get('tremor_level', 'Unknown')}"
-                    )
+                    pain_val = s.get(SESSION_PAIN_FIELD)
+                    caption = f"{s.get('classification', 'Unknown')} • Tremor: {s.get('tremor_level', 'Unknown')}"
+                    if pain_val is not None:
+                        caption += f" • Pain: {pain_val}/10"
+                    st.caption(caption)
         st.divider()
 
         with tab3:
-            latest = get_latest_session()
+            latest = get_latest_session(pid)
 
             if latest is None:
                 st.info("No session data available yet")
@@ -436,6 +572,7 @@ if st.session_state.page == "patients":
 
         if st.button("⬅ Back to Patients"):
             st.session_state.selected_patient = None
+            st.session_state.selected_patient_id = None
 
 # -----------------------
 # PROGRAM BUILDER
