@@ -1,5 +1,5 @@
 # Patient State Machine V0
-# States: IDLE_PRE, EXERCISING, PAUSED, ERROR, IDLE_POST
+# States: IDLE_PRE, EXERCISING, PAUSED, IDLE_POST
 
 from live_guidance import (
     check_ppg_signal,
@@ -12,19 +12,19 @@ from live_guidance import (
 )
 
 # States
-IDLE_PRE    = "IDLE_PRE"
-EXERCISING  = "EXERCISING"
-PAUSED      = "PAUSED"
-ERROR       = "ERROR"
-IDLE_POST   = "IDLE_POST"
+IDLE_PRE   = "IDLE_PRE"
+EXERCISING = "EXERCISING"
+PAUSED     = "PAUSED"
+IDLE_POST  = "IDLE_POST"
+
+ATYPICAL_THRESHOLD = 0.4  # pause if > 40% of reps are atypical
 
 # State Machine Class
 class PatientStateMachine:
     def __init__(self):
         self.state = IDLE_PRE
-        self.rep_count = 0
-        self.error_log = []
         self.pause_reason = None
+        self.atypical_flags = []
 
     def transition(self, new_state, reason=None):
         print(f"\n  [STATE] {self.state} → {new_state}" + (f" ({reason})" if reason else ""))
@@ -32,12 +32,13 @@ class PatientStateMachine:
         if reason:
             self.pause_reason = reason
 
-    # Evaluate current state given imu and hr snapshots
     def update(self, imu, hr):
-        classification = imu.get("classification", "Unknown")
         accepted_reps = imu.get("accepted_reps", 0)
+        atypical_reps = imu.get("atypical_reps", 0)
         coverage = hr.get("valid_signal_coverage_pct", 100.0)
         peak_hr = hr.get("peak_hr_bpm", 0)
+
+        atypical_ratio = atypical_reps / accepted_reps if accepted_reps > 0 else 0
 
         # IDLE_PRE → EXERCISING
         if self.state == IDLE_PRE:
@@ -46,37 +47,26 @@ class PatientStateMachine:
 
         # EXERCISING
         elif self.state == EXERCISING:
-
-            # Check pause conditions first
             if coverage < ppg_coverage_min:
                 self.transition(PAUSED, f"PPG signal too low ({coverage}%)")
             elif peak_hr > hr_active_max:
                 self.transition(PAUSED, f"HR too high ({peak_hr} bpm)")
-
-            # Check for atypical rep
-            elif classification == "Atypical":
-                self.error_log.append(f"Atypical rep detected at rep {accepted_reps}")
-                self.transition(ERROR, "Atypical rep detected")
-
-            # Check session complete
+            elif atypical_ratio > ATYPICAL_THRESHOLD:
+                self.atypical_flags.append(f"Atypical ratio exceeded threshold ({atypical_reps}/{accepted_reps} reps)")
+                self.transition(PAUSED, f"Atypical rep ratio too high ({atypical_reps}/{accepted_reps})")
             elif accepted_reps >= rep_goal:
                 self.transition(IDLE_POST, "Rep goal met")
 
         # PAUSED
         elif self.state == PAUSED:
-            if coverage >= ppg_coverage_min and peak_hr <= hr_active_max:
-                self.transition(EXERCISING, "Signal and HR recovered")
+            atypical_ok = atypical_ratio <= ATYPICAL_THRESHOLD
+            hr_ok = peak_hr <= hr_active_max
+            ppg_ok = coverage >= ppg_coverage_min
+
+            if atypical_ok and hr_ok and ppg_ok:
+                self.transition(EXERCISING, "All conditions cleared")
             else:
                 print(f"  [PAUSED] Waiting: {self.pause_reason}")
-
-        # ERROR
-        elif self.state == ERROR:
-            if accepted_reps >= rep_goal:
-                self.transition(IDLE_POST, "Rep goal met despite Atypical rep")
-            elif classification == "Typical":
-                self.transition(EXERCISING, "Typical rep resumed")
-            else:
-                print(f"  [ERROR] Logged: {self.error_log[-1]}")
 
         # IDLE_POST
         elif self.state == IDLE_POST:
@@ -89,13 +79,17 @@ class PatientStateMachine:
                 print(f"  {line}")
             for line in check_ppg_signal(hr):
                 print(f"  {line}")
+            if self.atypical_flags:
+                print("\n  Atypical Rep Flags:")
+                for flag in self.atypical_flags:
+                    print(f"  ⚠️  {flag}")
 
     def print_state(self):
         print(f"\n Current Patient State: {self.state}")
-        if self.error_log:
-            print("Error Log:")
-            for entry in self.error_log:
-                print(f"  {entry}")
+        if self.atypical_flags:
+            print("Atypical Flags:")
+            for flag in self.atypical_flags:
+                print(f"  {flag}")
 
 
 # Main
@@ -115,41 +109,36 @@ if __name__ == "__main__":
 
     sm.print_state()
 
-# Example test cases
-"""
+
 def run_tests():
     print("\n TESTING STATE MACHINE\n")
 
-    # Test 1: Normal session — should go IDLE_PRE → EXERCISING → IDLE_POST
+    # Test 1: Normal session — IDLE_PRE → EXERCISING → IDLE_POST
     print("Test 1: Normal session")
     sm = PatientStateMachine()
-    sm.update({"accepted_reps": 0, "classification": "Typical", "rep_durations": []}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
-    sm.update({"accepted_reps": 5, "classification": "Typical", "rep_durations": [1.2, 1.5]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
-    sm.update({"accepted_reps": 10, "classification": "Typical", "rep_durations": [1.2, 1.5]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
+    sm.update({"accepted_reps": 0, "atypical_reps": 0, "rep_durations": []}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
+    sm.update({"accepted_reps": 5, "atypical_reps": 0, "rep_durations": [1.2, 1.5]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
+    sm.update({"accepted_reps": 10, "atypical_reps": 0, "rep_durations": [1.2, 1.5]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
     sm.print_state()
 
-    # Test 2: PPG drops — should go EXERCISING → PAUSED → EXERCISING
+    # Test 2: PPG drops — EXERCISING → PAUSED → EXERCISING
     print("\nTest 2: PPG signal drop and recovery")
     sm = PatientStateMachine()
-    sm.update({"accepted_reps": 3, "classification": "Typical", "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 60.0, "peak_hr_bpm": 120, "bpm": 100})
-    sm.update({"accepted_reps": 3, "classification": "Typical", "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 60.0, "peak_hr_bpm": 120, "bpm": 100})
-    sm.update({"accepted_reps": 3, "classification": "Typical", "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
+    sm.update({"accepted_reps": 3, "atypical_reps": 0, "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 60.0, "peak_hr_bpm": 120, "bpm": 100})
+    sm.update({"accepted_reps": 3, "atypical_reps": 0, "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 60.0, "peak_hr_bpm": 120, "bpm": 100})
+    sm.update({"accepted_reps": 3, "atypical_reps": 0, "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
     sm.print_state()
 
-    # Test 3: HR spike — should go EXERCISING → PAUSED
+    # Test 3: HR spike — EXERCISING → PAUSED
     print("\nTest 3: HR spike")
     sm = PatientStateMachine()
-    sm.update({"accepted_reps": 3, "classification": "Typical", "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 180, "bpm": 100})
-    sm.update({"accepted_reps": 3, "classification": "Typical", "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 180, "bpm": 100})
+    sm.update({"accepted_reps": 3, "atypical_reps": 0, "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 180, "bpm": 100})
+    sm.update({"accepted_reps": 3, "atypical_reps": 0, "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 180, "bpm": 100})
     sm.print_state()
 
-    # Test 4: Atypical rep — should go EXERCISING → ERROR → EXERCISING
-    print("\nTest 4: Atypical rep recovery")
+    # Test 4: Atypical ratio > 40% — EXERCISING → PAUSED
+    print("\nTest 4: High atypical ratio")
     sm = PatientStateMachine()
-    sm.update({"accepted_reps": 3, "classification": "Atypical", "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
-    sm.update({"accepted_reps": 4, "classification": "Typical", "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
+    sm.update({"accepted_reps": 5, "atypical_reps": 3, "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
+    sm.update({"accepted_reps": 5, "atypical_reps": 1, "rep_durations": [1.2]}, {"valid_signal_coverage_pct": 80.0, "peak_hr_bpm": 120, "bpm": 100})
     sm.print_state()
-
-if __name__ == "__main__":
-    run_tests()
-"""
