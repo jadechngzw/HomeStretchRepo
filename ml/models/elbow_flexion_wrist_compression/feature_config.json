@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "exercise_id": "004",
+  "exercise_name": "elbow_flexion_wrist_compression",
+  "feature_columns": [
+    "duration_seconds",
+    "completion_error",
+    "pitch_rom",
+    "pitch_velocity_mean",
+    "pitch_peak_velocity",
+    "pitch_smoothness",
+    "yaw_rom",
+    "yaw_velocity_mean",
+    "yaw_peak_velocity",
+    "yaw_smoothness",
+    "roll_rom",
+    "roll_velocity_mean",
+    "roll_peak_velocity",
+    "roll_smoothness",
+    "pitch_yaw_correlation",
+    "pitch_roll_correlation",
+    "yaw_roll_correlation"
+  ],
+  "channel_order": [
+    "pitch",
+    "yaw",
+    "roll"
+  ],
+  "source_columns": [
+    0,
+    1,
+    2
+  ],
+  "sensor": "S1",
+  "dataset_placement": "forearm, about 10 cm above dorsal wrist crease",
+  "intended_watch_placement": "wrist",
+  "deployment_validated": false,
+  "angle_units": "degrees",
+  "sampling_rate_hz_assumed": 50.0,
+  "timebase_verified_from_timestamps": false,
+  "smoothing": {
+    "type": "centered_moving_average",
+    "window_samples": 5,
+    "edge_mode": "nearest"
+  },
+  "angle_unwrap": {
+    "period_degrees": 360,
+    "axis": "time"
+  },
+  "source_quality": "reject adjacent angle jumps >180 degrees before unwrapping",
+  "padding": "trim trailing rows zero across all six source columns before selecting first three",
+  "baseline": "subtract first-five-sample per-channel mean after segmentation",
+  "segmentation": {
+    "channel_index": 2,
+    "channel_name": "roll",
+    "period_seconds": 2.58,
+    "prominence_degrees": 3.0,
+    "periodic_training_records": 85,
+    "selection_score": 1.0106978614125195,
+    "minimum_distance_samples": 70,
+    "channel_candidates": [
+      {
+        "channel_index": 0,
+        "channel_name": "pitch",
+        "period_seconds": 2.59,
+        "prominence_degrees": 3.0,
+        "periodic_training_records": 40,
+        "selection_score": 0.3920128925540359
+      },
+      {
+        "channel_index": 1,
+        "channel_name": "yaw",
+        "period_seconds": 2.4,
+        "prominence_degrees": 3.0,
+        "periodic_training_records": 59,
+        "selection_score": 0.8187742987207309
+      },
+      {
+        "channel_index": 2,
+        "channel_name": "roll",
+        "period_seconds": 2.58,
+        "prominence_degrees": 3.0,
+        "periodic_training_records": 85,
+        "selection_score": 1.0106978614125195
+      }
+    ],
+    "boundary_type": "valley"
+  },
+  "duration_limits_seconds": [
+    1.4,
+    7.6
+  ],
+  "completion_error": {
+    "definition": "RMS of last-five-sample mean normalized pitch and roll",
+    "percentile": 95,
+    "threshold_degrees": 15.346873793030289,
+    "calibration_population": "training interior segments within training duration q01-q99",
+    "calibration_count": 550
+  },
+  "training_edge_policy": "exclude; retain in segment audit",
+  "scaler_mean": [
+    2.7800764818355637,
+    3.2337356746121557,
+    6.003322753346094,
+    6.6981462601526065,
+    29.933059273422543,
+    -7.284673499707919,
+    7.653378585086044,
+    7.3350041668921175,
+    49.15542065009564,
+    -8.266989155195509,
+    11.712270363288734,
+    11.957660315418828,
+    65.20408221797322,
+    -8.741644647490851,
+    -0.05146392378484678,
+    -0.03474044609028859,
+    -0.1504902663788917
+  ],
+  "scaler_scale": [
+    1.2436841564309697,
+    2.7860875075636464,
+    8.122913143592891,
+    14.780759002424267,
+    75.9730918213114,
+    0.940753430105103,
+    7.992282929149821,
+    6.7732619106628045,
+    66.8341935440782,
+    0.9355207589651097,
+    7.949701368713296,
+    7.628101793811821,
+    57.17872936333138,
+    0.6798019334275419,
+    0.4676597952122564,
+    0.5381460090155258,
+    0.5764397161095145
+  ],
+  "contamination": 0.05,
+  "anomaly_score": "negative decision_function; positive means reference outlier",
+  "anomaly_threshold": 0.0,
+  "score_samples_threshold": -0.5579212053030983,
+  "quality_failure_output": "unscorable; do not equate with typical/atypical"
+}

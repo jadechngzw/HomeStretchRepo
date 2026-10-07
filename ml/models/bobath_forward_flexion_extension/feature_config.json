@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "exercise_id": "002",
+  "exercise_name": "bobath_forward_flexion_extension",
+  "feature_columns": [
+    "duration_seconds",
+    "completion_error",
+    "pitch_rom",
+    "pitch_velocity_mean",
+    "pitch_peak_velocity",
+    "pitch_smoothness",
+    "yaw_rom",
+    "yaw_velocity_mean",
+    "yaw_peak_velocity",
+    "yaw_smoothness",
+    "roll_rom",
+    "roll_velocity_mean",
+    "roll_peak_velocity",
+    "roll_smoothness",
+    "pitch_yaw_correlation",
+    "pitch_roll_correlation",
+    "yaw_roll_correlation"
+  ],
+  "channel_order": [
+    "pitch",
+    "yaw",
+    "roll"
+  ],
+  "source_columns": [
+    0,
+    1,
+    2
+  ],
+  "sensor": "S1",
+  "dataset_placement": "forearm, about 10 cm above dorsal wrist crease",
+  "intended_watch_placement": "wrist",
+  "deployment_validated": false,
+  "angle_units": "degrees",
+  "sampling_rate_hz_assumed": 50.0,
+  "timebase_verified_from_timestamps": false,
+  "smoothing": {
+    "type": "centered_moving_average",
+    "window_samples": 5,
+    "edge_mode": "nearest"
+  },
+  "angle_unwrap": {
+    "period_degrees": 360,
+    "axis": "time"
+  },
+  "source_quality": "reject adjacent angle jumps >180 degrees before unwrapping",
+  "padding": "trim trailing rows zero across all six source columns before selecting first three",
+  "baseline": "subtract first-five-sample per-channel mean after segmentation",
+  "segmentation": {
+    "channel_index": 0,
+    "channel_name": "pitch",
+    "period_seconds": 4.54,
+    "prominence_degrees": 23.709090000000007,
+    "periodic_training_records": 204,
+    "selection_score": 44.209824979352184,
+    "minimum_distance_samples": 124,
+    "channel_candidates": [
+      {
+        "channel_index": 0,
+        "channel_name": "pitch",
+        "period_seconds": 4.54,
+        "prominence_degrees": 23.709090000000007,
+        "periodic_training_records": 204,
+        "selection_score": 44.209824979352184
+      },
+      {
+        "channel_index": 1,
+        "channel_name": "yaw",
+        "period_seconds": 3.28,
+        "prominence_degrees": 19.952139999999986,
+        "periodic_training_records": 199,
+        "selection_score": 32.818961958274436
+      },
+      {
+        "channel_index": 2,
+        "channel_name": "roll",
+        "period_seconds": 3.28,
+        "prominence_degrees": 22.02462,
+        "periodic_training_records": 197,
+        "selection_score": 32.42480665030968
+      }
+    ],
+    "boundary_type": "valley"
+  },
+  "duration_limits_seconds": [
+    2.54,
+    6.4191999999999965
+  ],
+  "completion_error": {
+    "definition": "RMS of last-five-sample mean normalized pitch and roll",
+    "percentile": 95,
+    "threshold_degrees": 33.74315124713757,
+    "calibration_population": "training interior segments within training duration q01-q99",
+    "calibration_count": 460
+  },
+  "training_edge_policy": "exclude; retain in segment audit",
+  "scaler_mean": [
+    3.8294570135746566,
+    12.07240066319483,
+    95.48633484162869,
+    73.18478452167169,
+    330.69761312217173,
+    -9.817997243701159,
+    84.4783185520361,
+    77.94823610295471,
+    310.507850678733,
+    -9.937562449758847,
+    93.04590995475117,
+    90.22880359401334,
+    393.9592533936645,
+    -10.269164721685605,
+    0.4138463247377914,
+    -0.41336358142619606,
+    -0.6348736944178914
+  ],
+  "scaler_scale": [
+    0.9687002880933651,
+    9.165403398851103,
+    30.86562130430149,
+    24.714027033009636,
+    126.22436858452885,
+    0.5863417074018462,
+    22.86382310515795,
+    25.033311943307314,
+    135.7352670534717,
+    0.6402289699977496,
+    24.46621698478811,
+    28.52428470153514,
+    158.36153818300372,
+    0.592455605597718,
+    0.615422233271098,
+    0.5780794032148437,
+    0.36098391594643375
+  ],
+  "contamination": 0.05,
+  "anomaly_score": "negative decision_function; positive means reference outlier",
+  "anomaly_threshold": 0.0,
+  "score_samples_threshold": -0.593361814083776,
+  "quality_failure_output": "unscorable; do not equate with typical/atypical"
+}
