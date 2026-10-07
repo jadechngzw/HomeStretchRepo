@@ -14,3 +14,4 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 ml/.venv/
+misc_code/NormWear
