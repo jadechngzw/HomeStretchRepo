@@ -1,0 +1,151 @@
+{
+  "ankle_extension_knee_internal_external_rotation": {
+    "name": "Ankle extension knee internal external rotation",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/ankle_extension_knee_internal_external_rotation/ankle_extension_knee_internal_external_rotation_isolation_forest.pkl",
+    "scaler": "ml/models/ankle_extension_knee_internal_external_rotation/scaler.pkl",
+    "feature_config": "ml/models/ankle_extension_knee_internal_external_rotation/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "lower_leg"
+  },
+  "bicep_curl": {
+    "name": "Bicep curl",
+    "input": "acceleration",
+    "status": "experimental_transfer",
+    "model": "ml/models/bicep_curls/isolation_forest.pkl",
+    "scaler": "mbientcode/scaler.pkl",
+    "notes": "Identical SHA-256 to the mbientcode model; paired with its original mbientcode/scaler.pkl. The alternate isolation_forest_model.pkl has no verified feature contract and is not selected.",
+    "recommended_placement": "wrist"
+  },
+  "bobath_anterior_posterior_rotation": {
+    "name": "Bobath anterior posterior rotation",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/bobath_anterior_posterior_rotation/bobath_anterior_posterior_rotation_isolation_forest.pkl",
+    "scaler": "ml/models/bobath_anterior_posterior_rotation/scaler.pkl",
+    "feature_config": "ml/models/bobath_anterior_posterior_rotation/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "bobath_flexion_extension": {
+    "name": "Bobath flexion extension",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/bobath_flexion_extension/bobath_flexion_extension_isolation_forest.pkl",
+    "scaler": "ml/models/bobath_flexion_extension/scaler.pkl",
+    "feature_config": "ml/models/bobath_flexion_extension/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "bobath_forward_flexion_extension": {
+    "name": "Bobath forward flexion extension",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/bobath_forward_flexion_extension/bobath_forward_flexion_extension_isolation_forest.pkl",
+    "scaler": "ml/models/bobath_forward_flexion_extension/scaler.pkl",
+    "feature_config": "ml/models/bobath_forward_flexion_extension/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "bobath_handshake": {
+    "name": "Bobath handshake",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/bobath_handshake/bobath_handshake_isolation_forest.pkl",
+    "scaler": "ml/models/bobath_handshake/scaler.pkl",
+    "feature_config": "ml/models/bobath_handshake/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "breast_expansion": {
+    "name": "Breast expansion",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/breast_expansion/breast_expansion_isolation_forest.pkl",
+    "scaler": "ml/models/breast_expansion/scaler.pkl",
+    "feature_config": "ml/models/breast_expansion/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "elbow_flexion_wrist_compression": {
+    "name": "Elbow flexion wrist compression",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/elbow_flexion_wrist_compression/elbow_flexion_wrist_compression_isolation_forest.pkl",
+    "scaler": "ml/models/elbow_flexion_wrist_compression/scaler.pkl",
+    "feature_config": "ml/models/elbow_flexion_wrist_compression/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "elbow_joint_flexion_touch": {
+    "name": "Elbow joint flexion touch",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/elbow_joint_flexion_touch/elbow_joint_flexion_touch_isolation_forest.pkl",
+    "scaler": "ml/models/elbow_joint_flexion_touch/scaler.pkl",
+    "feature_config": "ml/models/elbow_joint_flexion_touch/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "flexion_pressure_rotation_forward_backward": {
+    "name": "Flexion pressure rotation forward backward",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/flexion_pressure_rotation_forward_backward/flexion_pressure_rotation_forward_backward_isolation_forest.pkl",
+    "scaler": "ml/models/flexion_pressure_rotation_forward_backward/scaler.pkl",
+    "feature_config": "ml/models/flexion_pressure_rotation_forward_backward/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "hip_flexion_extension": {
+    "name": "Hip flexion extension",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/hip_flexion_extension/hip_flexion_extension_isolation_forest.pkl",
+    "scaler": "ml/models/hip_flexion_extension/scaler.pkl",
+    "feature_config": "ml/models/hip_flexion_extension/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "lower_leg"
+  },
+  "knee_flexion_extension": {
+    "name": "Knee flexion extension",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/knee_flexion_extension/knee_flexion_extension_isolation_forest.pkl",
+    "scaler": "ml/models/knee_flexion_extension/scaler.pkl",
+    "feature_config": "ml/models/knee_flexion_extension/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "lower_leg"
+  },
+  "shoulder_internal_external_rotation": {
+    "name": "Shoulder internal external rotation",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/shoulder_internal_external_rotation/shoulder_internal_external_rotation_isolation_forest.pkl",
+    "scaler": "ml/models/shoulder_internal_external_rotation/scaler.pkl",
+    "feature_config": "ml/models/shoulder_internal_external_rotation/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "shoulder_touch_training": {
+    "name": "Shoulder touch training",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/shoulder_touch_training/shoulder_touch_training_isolation_forest.pkl",
+    "scaler": "ml/models/shoulder_touch_training/scaler.pkl",
+    "feature_config": "ml/models/shoulder_touch_training/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  },
+  "wrist_flexion_extension": {
+    "name": "Wrist flexion extension",
+    "input": "orientation_degrees",
+    "status": "experimental_orientation_transfer",
+    "model": "ml/models/wrist_flexion_extension/wrist_flexion_extension_isolation_forest.pkl",
+    "scaler": "ml/models/wrist_flexion_extension/scaler.pkl",
+    "feature_config": "ml/models/wrist_flexion_extension/feature_config.json",
+    "feature_count": 17,
+    "recommended_placement": "forearm"
+  }
+}
