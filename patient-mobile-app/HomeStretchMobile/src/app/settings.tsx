@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -9,42 +9,20 @@ import {
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 
-type WatchStatus =
-  | "checking"
-  | "connected"
-  | "disconnected";
+import { useWearable } from "../wearable/useWearable";
+
+import { useCameraPreference } from "../preferences/camera";
 
 export default function SettingsScreen() {
-  const [watchStatus, setWatchStatus] =
-    useState<WatchStatus>("checking");
-
-  const [notificationsEnabled, setNotificationsEnabled] =
-    useState(true);
-
-  /*
-   * Simulated wearable connection.
-   *
-   * Later this will be replaced with the actual
-   * Bluetooth connection to the HomeStretch PCB.
-   */
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setWatchStatus("connected");
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  const connectWearable = () => {
-    setWatchStatus("checking");
-
-    setTimeout(() => {
-      setWatchStatus("connected");
-    }, 1500);
-  };
+  const wearable = useWearable();
+  const watchStatus = wearable.phase;
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [cameraEnabled, setCameraEnabled] = useCameraPreference();
+  useFocusEffect(useCallback(() => () => { void wearable.stopScan(); }, [wearable.stopScan]));
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   return (
     <View style={styles.screen}>
@@ -118,41 +96,71 @@ export default function SettingsScreen() {
                 />
 
                 <Text style={styles.statusText}>
-                  {watchStatus === "checking"
-                    ? "Checking for connection..."
-                    : watchStatus ===
-                      "connected"
-                    ? "Watch connected"
-                    : "Watch disconnected"}
+                  {wearable.message}
                 </Text>
 
               </View>
             </View>
           </View>
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.connectButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={connectWearable}
-          >
-            <Ionicons
-              name={
-                watchStatus === "connected"
-                  ? "refresh-outline"
-                  : "bluetooth-outline"
-              }
-              size={20}
-              color="#FFFFFF"
-            />
-
-            <Text style={styles.connectButtonText}>
-              {watchStatus === "connected"
-                ? "Reconnect"
-                : "Connect Wearable"}
+          {watchStatus === "connected" || watchStatus === "disconnecting" ? (
+            <View>
+              <Text style={[styles.description, { marginTop: 8 }]}>{wearable.selectedName}</Text>
+              <Pressable accessibilityRole="button" disabled={wearable.busy}
+                style={styles.connectButton} onPress={() => void wearable.disconnect()}>
+                <Text style={styles.connectButtonText}>{wearable.busy ? "Disconnecting…" : "Disconnect"}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Choose a watch"
+                accessibilityState={{ expanded: pickerOpen, disabled: watchStatus === "connecting" }}
+                disabled={watchStatus === "connecting"}
+                style={styles.devicePicker}
+                onPress={() => {
+                  setPickerOpen(!pickerOpen);
+                  if (pickerOpen) void wearable.stopScan();
+                  else void wearable.scan();
+                }}>
+                <Text style={styles.deviceName}>{watchStatus === "connecting" ? "Connecting…" : "Choose a watch"}</Text>
+                <Ionicons name={pickerOpen ? "chevron-up" : "chevron-down"} size={20} color="#367FBD" />
+              </Pressable>
+              {pickerOpen && (
+                <View style={styles.deviceList}>
+                  {wearable.devices.map(device => (
+                    <Pressable key={device.id} accessibilityRole="button"
+                      accessibilityLabel={`Connect to ${device.name}, ${device.id.slice(-4)}`}
+                      disabled={watchStatus === "connecting" || watchStatus === "preparing"}
+                      style={styles.deviceOption}
+                      onPress={() => { setPickerOpen(false); void wearable.connect(device.id); }}>
+                      <Ionicons name="watch-outline" size={22} color="#367FBD" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.deviceName}>{device.name}</Text>
+                        <Text style={styles.description}>Watch ending in {device.id.slice(-4)}</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color="#367FBD" />
+                    </Pressable>
+                  ))}
+                  <Text style={[styles.description, { padding: 12 }]}>
+                    {watchStatus === "scanning" || watchStatus === "preparing"
+                      ? "Searching for nearby watches…"
+                      : wearable.devices.length ? "Select your watch to connect." : "No watches found nearby."}
+                  </Text>
+                  {watchStatus === "disconnected" && (
+                    <Pressable accessibilityRole="button" style={styles.deviceOption} onPress={() => void wearable.scan()}>
+                      <Ionicons name="refresh-outline" size={20} color="#367FBD" />
+                      <Text style={styles.deviceName}>Search again</Text>
+                    </Pressable>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+          {wearable.error ? (
+            <Text accessibilityRole="alert" style={[styles.description, { color: "#A12622", marginTop: 12 }]}>
+              {wearable.error}
             </Text>
-          </Pressable>
+          ) : null}
 
         </View>
 
@@ -183,32 +191,17 @@ export default function SettingsScreen() {
                 Exercise Camera
               </Text>
 
-              <View style={styles.statusRow}>
-
-                <View
-                  style={[
-                    styles.statusDot,
-                    styles.connected,
-                  ]}
-                />
-
-                <Text style={styles.statusText}>
-                  Camera available
-                </Text>
-
-              </View>
-
+              <Text style={styles.description}>Show your camera during exercises.</Text>
             </View>
-
+            <Switch
+              accessibilityLabel="Enable exercise camera"
+              value={cameraEnabled}
+              onValueChange={setCameraEnabled}
+              trackColor={{ false: "#D5E7F3", true: "#76A9D2" }}
+              thumbColor="#FFFFFF"
+            />
           </View>
-
-          <Text style={styles.description}>
-            Your camera is used during exercises
-            to provide visual guidance.
-          </Text>
-
         </View>
-
 
         {/* =======================================
             NOTIFICATIONS
@@ -408,6 +401,10 @@ export default function SettingsScreen() {
 ===================================================== */
 
 const styles = StyleSheet.create({
+  devicePicker: { marginTop: 14, padding: 13, borderWidth: 1, borderColor: "#BFD8EC", borderRadius: 12, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  deviceList: { marginTop: 6, borderRadius: 12, backgroundColor: "#FFFFFF", overflow: "hidden" },
+  deviceOption: { padding: 13, flexDirection: "row", alignItems: "center", gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#D5E7F3" },
+  deviceName: { color: "#367FBD", fontSize: 15, fontWeight: "500" },
 
   screen: {
     flex: 1,
