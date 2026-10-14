@@ -19,6 +19,10 @@ class Controller:
         self.session=None;self.heartbeat=None;self.connected=False;self.stop_expected=False;self.closing=False;self.device_name='';self.status=None;self.finished_path=None;self.finishing=False;self.starting=False;self.analysis_task=None;self.emergency_task=None
         self.live_history={k:deque(maxlen=1600) for k in range(4,8)};self.live_task=None
         self.thread.start();self.ready.wait()
+        self.pipeline=None
+        if (Path(__file__).resolve().parents[1]/'homestretch_integration.json').exists():
+            from desktop.homestretch import HomeStretchBridge
+            self.pipeline=HomeStretchBridge(Path(__file__).resolve().parents[1],self.post,demo=demo)
     def _run(self):
         asyncio.set_event_loop(self.loop);self.watch=(DemoWatch if self.demo else Watch)(self._sample,self._status,self._disconnected,self._telemetry)
         self.loop.set_exception_handler(lambda loop,ctx:logging.error('Background task failed: %s',ctx.get('message'),exc_info=ctx.get('exception')))
@@ -107,15 +111,19 @@ class Controller:
                 recording.finish(reason,status);self.finished_path=str(recording.path)
                 logging.info('Recording ended: %s %s',reason,recording.meta)
                 self.post('stopped',(str(recording.path),recording.meta))
+                if self.pipeline:
+                    try:self.pipeline.enqueue(recording.path,recording.meta.get('homestretch'))
+                    except Exception as exc:self.post('homestretch_status','Queue failed; raw recording retained: '+str(exc))
             finally:self.post('recording',False)
     def _disconnected(self):
         self.connected=False
         try:self._finish('Bluetooth disconnected')
         except Exception as e:self.post('error',str(e))
         self.post('connection',False)
-    async def start(self,folder,name,mask,settings=None):
+    async def start(self,folder,name,mask,settings=None,homestretch=None):
         if not self.connected or self.session or self.starting or self.finishing:raise RuntimeError('Connect to an idle watch first')
         if mask not in range(1,16):raise ValueError('Select at least one sensor')
+        homestretch=self.pipeline.validate(homestretch) if self.pipeline else None
         settings=settings or Settings()
         packed=settings.packed()
         if mask&4 and not settings.leds:raise ValueError('Select a PPG colour')
@@ -127,7 +135,9 @@ class Controller:
         if configured.reason or configured.state!=0:raise RuntimeError('Watch rejected sampling settings')
         self.session=Session(Path(folder)/'.recovery',name,sid,mask,self.device_name,self.demo)
         for hist in self.live_history.values():hist.clear()
-        self.session.meta['settings']=asdict(settings);self.session.meta['protocol_version']=3;self.session._save()
+        self.session.meta['settings']=asdict(settings);self.session.meta['protocol_version']=3
+        if homestretch:self.session.meta['homestretch']=homestretch
+        self.session._save()
         self.post('busy',True)
         try:
             s=await self.watch.request(1,sid,mask)
@@ -177,4 +187,6 @@ class Controller:
         try:await asyncio.wait_for(self.disconnect(),5)
         except Exception:
             self._finish('App closed without confirmed Stop')
-        finally:self.post('closed')
+        finally:
+            if self.pipeline:self.pipeline.close()
+            self.post('closed')

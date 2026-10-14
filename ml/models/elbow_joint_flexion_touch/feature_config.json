@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "exercise_id": "011",
+  "exercise_name": "elbow_joint_flexion_touch",
+  "feature_columns": [
+    "duration_seconds",
+    "completion_error",
+    "pitch_rom",
+    "pitch_velocity_mean",
+    "pitch_peak_velocity",
+    "pitch_smoothness",
+    "yaw_rom",
+    "yaw_velocity_mean",
+    "yaw_peak_velocity",
+    "yaw_smoothness",
+    "roll_rom",
+    "roll_velocity_mean",
+    "roll_peak_velocity",
+    "roll_smoothness",
+    "pitch_yaw_correlation",
+    "pitch_roll_correlation",
+    "yaw_roll_correlation"
+  ],
+  "channel_order": [
+    "pitch",
+    "yaw",
+    "roll"
+  ],
+  "source_columns": [
+    0,
+    1,
+    2
+  ],
+  "sensor": "S1",
+  "dataset_placement": "forearm, about 10 cm above dorsal wrist crease",
+  "intended_watch_placement": "wrist",
+  "deployment_validated": false,
+  "angle_units": "degrees",
+  "sampling_rate_hz_assumed": 50.0,
+  "timebase_verified_from_timestamps": false,
+  "smoothing": {
+    "type": "centered_moving_average",
+    "window_samples": 5,
+    "edge_mode": "nearest"
+  },
+  "angle_unwrap": {
+    "period_degrees": 360,
+    "axis": "time"
+  },
+  "source_quality": "reject adjacent angle jumps >180 degrees before unwrapping",
+  "padding": "trim trailing rows zero across all six source columns before selecting first three",
+  "baseline": "subtract first-five-sample per-channel mean after segmentation",
+  "segmentation": {
+    "channel_index": 0,
+    "channel_name": "pitch",
+    "period_seconds": 1.82,
+    "prominence_degrees": 3.826044999999997,
+    "periodic_training_records": 161,
+    "selection_score": 8.481549305424663,
+    "minimum_distance_samples": 50,
+    "channel_candidates": [
+      {
+        "channel_index": 0,
+        "channel_name": "pitch",
+        "period_seconds": 1.82,
+        "prominence_degrees": 3.826044999999997,
+        "periodic_training_records": 161,
+        "selection_score": 8.481549305424663
+      },
+      {
+        "channel_index": 1,
+        "channel_name": "yaw",
+        "period_seconds": 2.13,
+        "prominence_degrees": 3.0,
+        "periodic_training_records": 116,
+        "selection_score": 2.556792912260475
+      },
+      {
+        "channel_index": 2,
+        "channel_name": "roll",
+        "period_seconds": 1.9,
+        "prominence_degrees": 3.769662500000001,
+        "periodic_training_records": 135,
+        "selection_score": 4.464664544608373
+      }
+    ],
+    "boundary_type": "valley"
+  },
+  "duration_limits_seconds": [
+    1.0,
+    4.18
+  ],
+  "completion_error": {
+    "definition": "RMS of last-five-sample mean normalized pitch and roll",
+    "percentile": 95,
+    "threshold_degrees": 13.125323152593225,
+    "calibration_population": "training interior segments within training duration q01-q99",
+    "calibration_count": 821
+  },
+  "training_edge_policy": "exclude; retain in segment audit",
+  "scaler_mean": [
+    1.9487692307692264,
+    3.32719162213289,
+    15.23742743589748,
+    17.862700426402245,
+    59.519865384615315,
+    -8.176040290543092,
+    9.205087179487176,
+    9.984454837794752,
+    42.01808974358978,
+    -8.144654087326991,
+    14.404402307692308,
+    16.579258379613744,
+    67.44985897435902,
+    -8.61320933583411,
+    -0.21140218563640792,
+    0.25945960933986795,
+    -0.3349501811716445
+  ],
+  "scaler_scale": [
+    0.6392391495639992,
+    2.7205904701308214,
+    8.120351259057587,
+    14.067974558964144,
+    47.59793161662171,
+    0.7660907106029626,
+    6.254520971412242,
+    5.881514693188104,
+    34.927316966143835,
+    0.8928019206883916,
+    8.50954919376294,
+    11.313114628790437,
+    48.51483250438805,
+    0.7656394251147223,
+    0.5860782921791874,
+    0.6366739401822917,
+    0.4966922958200472
+  ],
+  "contamination": 0.05,
+  "anomaly_score": "negative decision_function; positive means reference outlier",
+  "anomaly_threshold": 0.0,
+  "score_samples_threshold": -0.5779191753759477,
+  "quality_failure_output": "unscorable; do not equate with typical/atypical"
+}

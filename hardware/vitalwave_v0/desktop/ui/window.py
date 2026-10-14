@@ -41,7 +41,7 @@ class Window:
     def __init__(self,root,controller):
         self.root=root;self.controller=controller;self.connected=False;self.recording=False;self.busy=False;self.processing=False;self.watch_fault=False;self.devices=[];self.first_ms=None;self.received=0;self.started=None;self.last_seconds=0;self.finished_path=None;self.button_counts=None;self.last_telemetry_ms=None;self.closed=False;self.last_draw=0;self.dirty=True
         self.history={i:deque(maxlen=2400) for i in range(1,8)};self.plots={};self.setup_widgets=[];self.setting_widgets=[]
-        root.title('VitalWave'+(' — DEMO / SIMULATED' if controller.demo else ''));root.geometry('1120x820');root.minsize(900,620)
+        root.title(('HomeStretch recorder' if controller.pipeline else 'VitalWave')+(' — DEMO / SIMULATED' if controller.demo else ''));root.geometry('1120x820');root.minsize(900,620)
         style=ttk.Style();style.theme_use('clam');style.configure('.',font=('Helvetica',11),background='#f4f7fa',foreground='#172b3a');style.configure('TButton',padding=(9,6));style.configure('TLabelframe',padding=10)
         shell=ttk.Frame(root);shell.pack(fill='both',expand=True)
         self.scroll=tk.Canvas(shell,highlightthickness=0,bg='#f4f7fa');bar=ttk.Scrollbar(shell,orient='vertical',command=self.scroll.yview);bar.pack(side='right',fill='y');self.scroll.pack(side='left',fill='both',expand=True);self.scroll.configure(yscrollcommand=bar.set)
@@ -78,6 +78,31 @@ class Window:
         ttk.Label(setup,text='Multiple PPG colours: 50 Hz each. Raw data are always preserved.',foreground='#526575').grid(row=5,column=0,columnspan=3,sticky='w')
         buttons=ttk.Frame(setup);buttons.grid(row=6,column=0,columnspan=3,sticky='w',pady=6);actions=('Start / Stop','Add marker','Disabled')
         self.button1=choice(buttons,'Button 1',actions,'Start / Stop',14);self.button2=choice(buttons,'Button 2',actions,'Add marker',14)
+        if controller.pipeline:self.folder.set(controller.pipeline.config.get('recordings_dir',self.folder.get()))
+        self.hs_exercise=tk.StringVar(value='Bicep curl')
+        self.hs_model_status=tk.StringVar(value='Bicep model: experimental acceleration-based classification.')
+        self.hs_enabled=tk.BooleanVar(value=bool(controller.pipeline) and not controller.demo)
+        self.hs_patient=tk.StringVar(value='');self.hs_side=tk.StringVar(value='right');self.hs_axis=tk.StringVar(value='y');self.hs_placement=tk.StringVar(value='wrist')
+        self.hs_upload=tk.BooleanVar(value=True);self.hs_classifier=tk.BooleanVar(value=True)
+        self.hs_data_use=tk.StringVar(value='development');self.hs_channel=tk.StringVar(value='ppg_green')
+        self.hs_status=tk.StringVar(value='HomeStretch: enter an ID; Stop will process and upload automatically.')
+        if controller.pipeline:
+            hs=ttk.LabelFrame(outer,text='HomeStretch — automatic session results');hs.pack(fill='x',pady=8)
+            for label,var in [('Enable pipeline',self.hs_enabled),('Upload to '+controller.pipeline.config['project'],self.hs_upload),('Experimental rep classifier',self.hs_classifier)]:
+                w=ttk.Checkbutton(hs,text=label,variable=var);w.pack(anchor='w');self.setup_widgets.append(w)
+            row=ttk.Frame(hs);row.pack(fill='x',pady=5)
+            ttk.Label(row,text='Patient / development ID').pack(side='left');w=ttk.Entry(row,textvariable=self.hs_patient,width=24);w.pack(side='left',padx=6);self.setup_widgets.append(w)
+            row=ttk.Frame(hs);row.pack(fill='x',pady=5)
+            ttk.Label(row,text='Exercise').pack(side='left')
+            self.exercise_ids={v['name']:k for k,v in controller.pipeline.catalog.items()}
+            w=ttk.Combobox(row,textvariable=self.hs_exercise,values=tuple(self.exercise_ids),state='readonly',width=55);w.pack(side='left',padx=6);self.setting_widgets.append(w)
+            w.bind('<<ComboboxSelected>>',self.exercise_changed)
+            ttk.Label(hs,textvariable=self.hs_model_status,wraplength=950).pack(anchor='w')
+            row=ttk.Frame(hs);row.pack(fill='x')
+            for label,var,values in [('Side',self.hs_side,('right','left')),('Placement',self.hs_placement,('wrist','forearm','lower_leg')),('Axis',self.hs_axis,('x','y','z')),('Data use',self.hs_data_use,('development','research')),('PPG',self.hs_channel,('ppg_green','ppg_red','ppg_infrared','ppg_blue'))]:
+                ttk.Label(row,text=label).pack(side='left');w=ttk.Combobox(row,textvariable=var,values=values,state='readonly',width=13);w.pack(side='left',padx=4);self.setting_widgets.append(w)
+            ttk.Label(hs,textvariable=self.hs_status,wraplength=950).pack(anchor='w',pady=5)
+            ttk.Button(hs,text='Retry pending uploads',command=controller.pipeline.retry).pack(anchor='w')
         controls=ttk.Frame(outer);controls.pack(fill='x',pady=10)
         self.start_button=ttk.Button(controls,text='Start',command=self.start);self.start_button.pack(side='left')
         self.stop_button=ttk.Button(controls,text='Stop',command=lambda:self.action('stop'));self.stop_button.pack(side='left',padx=6)
@@ -138,8 +163,20 @@ class Window:
     def connect(self):
         i=self.device_combo.current()
         if i>=0:device,name,_=self.devices[i];self.action('connect',device,name)
+    def exercise_changed(self,event=None):
+        selected=self.controller.pipeline.catalog[self.exercise_ids[self.hs_exercise.get()]]
+        self.hs_placement.set(selected['recommended_placement'])
+        self.hs_model_status.set('Bicep model: experimental acceleration-based classification.' if selected['input']=='acceleration' else 'Experimental pitch/roll/relative-yaw model. Keep still for the first 2 seconds; confirm sensor placement. Yaw may drift.')
     def start(self):
         if self.busy or self.recording:return
+        hs=None
+        if self.controller.pipeline and self.hs_enabled.get():
+            hs=dict(enabled=True,patient_id=self.hs_patient.get().strip(),exercise_id=self.exercise_ids[self.hs_exercise.get()],
+                    side=self.hs_side.get(),axis=self.hs_axis.get(),sensor_placement=self.hs_placement.get(),ppg_channel=self.hs_channel.get(),
+                    upload=self.hs_upload.get(),experimental_classifier=self.hs_classifier.get(),data_use=self.hs_data_use.get())
+            if not hs['patient_id']:self.hs_status.set('Enter a patient/development ID before Start.');return
+            if not self.acceleration.get() or not self.gyroscope.get():self.hs_status.set('Enable accelerometer and gyroscope for motion recording.');return
+            if self.imu_rate.get()!='50':self.hs_status.set('Select IMU 50 Hz for this recording configuration.');return
         leds=sum(b for b,v in self.led_vars.items() if v.get()) if self.ppg_enabled.get() else 0
         if self.ppg_enabled.get() and not leds:self.message.set('Choose at least one PPG colour, or disable PPG.');return
         mask=int(self.acceleration.get())|int(self.temperature.get())<<1|(4 if leds else 0)|(8 if self.gyroscope.get() else 0)
@@ -153,7 +190,7 @@ class Window:
             try:self.controller.plot_samples.get_nowait()
             except queue.Empty:break
         for k in self.show_vars:self.show_vars[k].set(bool({1:mask&1,2:mask&8,3:mask&2,8:0,4:leds&1,5:leds&2,6:leds&4,7:leds&8}[k]))
-        self.layout_plots();self.save_preferences();self.action('start',self.folder.get(),self.name.get(),mask,settings)
+        self.layout_plots();self.save_preferences();self.action('start',self.folder.get(),self.name.get(),mask,settings,hs)
     def save(self):
         if not self.finished_path:return
         p=filedialog.asksaveasfilename(initialdir=self.folder.get(),initialfile=Path(self.finished_path).name,defaultextension='.csv',filetypes=[('CSV','*.csv')])
@@ -203,6 +240,7 @@ class Window:
         elif event=='stopped':
             self.finished_path,meta=payload;self.busy=False
             self.message.set(('Stopped; complete data. ' if meta['complete'] else 'Stopped; incomplete data: '+meta['reason']+'. ')+'Recovery copy retained. Use Save as to export.')
+        elif event=='homestretch_status':self.hs_status.set(payload)
         elif event=='exported':self.finished_path=payload;self.message.set('Saved: '+payload)
         elif event=='processing':self.processing=payload;self.message.set('Processing PPG…' if payload else 'PPG analysis finished.')
         elif event=='processed':

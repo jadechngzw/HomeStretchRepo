@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "exercise_id": "012",
+  "exercise_name": "shoulder_touch_training",
+  "feature_columns": [
+    "duration_seconds",
+    "completion_error",
+    "pitch_rom",
+    "pitch_velocity_mean",
+    "pitch_peak_velocity",
+    "pitch_smoothness",
+    "yaw_rom",
+    "yaw_velocity_mean",
+    "yaw_peak_velocity",
+    "yaw_smoothness",
+    "roll_rom",
+    "roll_velocity_mean",
+    "roll_peak_velocity",
+    "roll_smoothness",
+    "pitch_yaw_correlation",
+    "pitch_roll_correlation",
+    "yaw_roll_correlation"
+  ],
+  "channel_order": [
+    "pitch",
+    "yaw",
+    "roll"
+  ],
+  "source_columns": [
+    0,
+    1,
+    2
+  ],
+  "sensor": "S1",
+  "dataset_placement": "forearm, about 10 cm above dorsal wrist crease",
+  "intended_watch_placement": "wrist",
+  "deployment_validated": false,
+  "angle_units": "degrees",
+  "sampling_rate_hz_assumed": 50.0,
+  "timebase_verified_from_timestamps": false,
+  "smoothing": {
+    "type": "centered_moving_average",
+    "window_samples": 5,
+    "edge_mode": "nearest"
+  },
+  "angle_unwrap": {
+    "period_degrees": 360,
+    "axis": "time"
+  },
+  "source_quality": "reject adjacent angle jumps >180 degrees before unwrapping",
+  "padding": "trim trailing rows zero across all six source columns before selecting first three",
+  "baseline": "subtract first-five-sample per-channel mean after segmentation",
+  "segmentation": {
+    "channel_index": 2,
+    "channel_name": "roll",
+    "period_seconds": 1.6,
+    "prominence_degrees": 9.101337499999998,
+    "periodic_training_records": 201,
+    "selection_score": 13.344508963813457,
+    "minimum_distance_samples": 44,
+    "channel_candidates": [
+      {
+        "channel_index": 0,
+        "channel_name": "pitch",
+        "period_seconds": 1.51,
+        "prominence_degrees": 4.428751250000001,
+        "periodic_training_records": 218,
+        "selection_score": 7.919626388097307
+      },
+      {
+        "channel_index": 1,
+        "channel_name": "yaw",
+        "period_seconds": 1.76,
+        "prominence_degrees": 8.1794,
+        "periodic_training_records": 209,
+        "selection_score": 10.575401473538577
+      },
+      {
+        "channel_index": 2,
+        "channel_name": "roll",
+        "period_seconds": 1.6,
+        "prominence_degrees": 9.101337499999998,
+        "periodic_training_records": 201,
+        "selection_score": 13.344508963813457
+      }
+    ],
+    "boundary_type": "valley"
+  },
+  "duration_limits_seconds": [
+    0.92,
+    3.98
+  ],
+  "completion_error": {
+    "definition": "RMS of last-five-sample mean normalized pitch and roll",
+    "percentile": 95,
+    "threshold_degrees": 17.798818890297195,
+    "calibration_population": "training interior segments within training duration q01-q99",
+    "calibration_count": 1268
+  },
+  "training_edge_policy": "exclude; retain in segment audit",
+  "scaler_mean": [
+    1.6373134328358268,
+    6.605915671452038,
+    17.422690878938642,
+    31.996671806351245,
+    100.45871061359856,
+    -8.944849308670694,
+    33.143404311774454,
+    52.03083486385173,
+    179.8588018242122,
+    -9.799854527442204,
+    36.87576733001651,
+    53.968286426093925,
+    184.3363805970158,
+    -9.857551686586199,
+    -0.10861946417450004,
+    -0.10904949835031727,
+    -0.25071159606631577
+  ],
+  "scaler_scale": [
+    0.5345906320565089,
+    4.118391315981483,
+    8.826859104827951,
+    23.32454171449374,
+    74.55952125878997,
+    0.9852959332108566,
+    16.006878750994396,
+    28.488277544409414,
+    121.55417406857669,
+    0.8791133874747112,
+    15.638730896562098,
+    25.883532747734037,
+    100.24978860714057,
+    0.749733663745679,
+    0.5624234618443545,
+    0.5668763155586857,
+    0.5570751745218573
+  ],
+  "contamination": 0.05,
+  "anomaly_score": "negative decision_function; positive means reference outlier",
+  "anomaly_threshold": 0.0,
+  "score_samples_threshold": -0.549298043181256,
+  "quality_failure_output": "unscorable; do not equate with typical/atypical"
+}

@@ -1,4 +1,8 @@
-import React, { useEffect, useState } from "react";
+import { useCurlSession } from "../wearable/useCurlSession";
+import type { Arm } from "../wearable/curlSession";
+import { useCameraPreference } from "../preferences/camera";
+import { useWearable } from "../wearable/useWearable";
+import React, { useCallback, useState } from "react";
 import SettingsButton from "../components/SettingsButton";
 import {
   View,
@@ -6,6 +10,7 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
+  Linking,
 } from "react-native";
 
 import {
@@ -16,6 +21,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import {
   router,
+  useFocusEffect,
   useLocalSearchParams,
 } from "expo-router";
 
@@ -91,43 +97,28 @@ export default function ExerciseDetailScreen() {
     exerciseInfo[id || "bicep-curls"] ??
     exerciseInfo["bicep-curls"];
 
-  const [reps, setReps] = useState(0);
+  const isCurl = (id || "bicep-curls") === "bicep-curls";
+  const session = useCurlSession();
+  const [arm, setArm] = useState<Arm | null>(null);
+  const [manualReps, setReps] = useState(0);
+  const reps = isCurl ? session.reps : manualReps;
+  const [cameraEnabled] = useCameraPreference();
+  const [focused, setFocused] = useState(false);
+  useFocusEffect(useCallback(() => {
+    setFocused(true);
+    return () => { setFocused(false); session.interrupt("Set interrupted. Start a new set when you return."); };
+  }, [session.interrupt]));
 
   const [permission, requestPermission] =
     useCameraPermissions();
 
-  const [watchStatus, setWatchStatus] =
-    useState<"checking" | "connected" | "disconnected">(
-      "checking"
-    );
+  const wearable = useWearable();
+  const watchStatus = wearable.phase;
 
-  const [exerciseStarted, setExerciseStarted] =
-    useState(false);
-
-
-  /* ===================================================
-     SIMULATED WATCH CONNECTION
-  =================================================== */
-
-  useEffect(() => {
-    /*
-     * Simulates checking for the wearable connection.
-     *
-     * Right now:
-     * checking → connected
-     *
-     * Later, this is where we will replace the
-     * simulation with the real BLE connection.
-     */
-
-    setWatchStatus("checking");
-
-    const timer = setTimeout(() => {
-      setWatchStatus("connected");
-    }, 1800);
-
-    return () => clearTimeout(timer);
-  }, []);
+  const [manualStarted, setExerciseStarted] = useState(false);
+  const exerciseStarted = isCurl ? session.running : manualStarted;
+  const transitioning = isCurl && ["starting", "stopping"].includes(session.phase);
+  const startDisabled = transitioning || (isCurl && !session.running && (!arm || watchStatus !== "connected"));
 
 
   /* ===================================================
@@ -152,7 +143,10 @@ export default function ExerciseDetailScreen() {
   =================================================== */
 
   const toggleExercise = () => {
-    setExerciseStarted((current) => !current);
+    if (isCurl) {
+      if (session.running) void session.stop();
+      else if (arm) void session.start(arm);
+    } else setExerciseStarted((current) => !current);
   };
 
 
@@ -163,73 +157,6 @@ export default function ExerciseDetailScreen() {
   const completeExercise = () => {
     router.replace("/exercise");
   };
-
-
-  /* ===================================================
-     CAMERA PERMISSION LOADING
-  =================================================== */
-
-  if (!permission) {
-    return (
-      <View style={styles.permissionScreen}>
-        <StatusBar style="dark" />
-
-        <Text style={styles.permissionTitle}>
-          Loading camera...
-        </Text>
-      </View>
-    );
-  }
-
-
-  /* ===================================================
-     CAMERA PERMISSION
-  =================================================== */
-
-  if (!permission.granted) {
-    return (
-      <View style={styles.permissionScreen}>
-        <StatusBar style="dark" />
-
-        <View style={styles.permissionCard}>
-
-          <Ionicons
-            name="camera-outline"
-            size={55}
-            color="#367FBD"
-          />
-
-          <Text style={styles.permissionTitle}>
-            Camera Access
-          </Text>
-
-          <Text style={styles.permissionText}>
-            HomeStretch uses your camera to show
-            your movement while you exercise.
-          </Text>
-
-          <Pressable
-            style={styles.permissionButton}
-            onPress={requestPermission}
-          >
-            <Text style={styles.permissionButtonText}>
-              Allow Camera
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.permissionBackButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.permissionBackText}>
-              Go Back
-            </Text>
-          </Pressable>
-
-        </View>
-      </View>
-    );
-  }
 
 
   /* ===================================================
@@ -296,16 +223,37 @@ export default function ExerciseDetailScreen() {
 
           <Text style={styles.watchStatusText}>
 
-            {watchStatus === "checking"
-              ? "Checking for connection to watch..."
-              : watchStatus === "connected"
-              ? "Watch connected"
-              : "Watch disconnected"}
+            {wearable.message}
 
           </Text>
 
         </View>
 
+
+
+        {isCurl && (
+          <View style={styles.armCard}>
+            <Text style={styles.armTitle}>Which arm are you exercising?</Text>
+            <View style={styles.armOptions}>
+              {(["left", "right"] as const).map(side => (
+                <Pressable key={side} accessibilityRole="radio"
+                  accessibilityState={{ selected: arm === side, disabled: session.running }}
+                  disabled={session.running} onPress={() => setArm(side)}
+                  style={[styles.armOption, arm === side && styles.armSelected]}>
+                  <Text style={[styles.armText, arm === side && { color: "#FFFFFF" }]}>
+                    {side === "left" ? "Left arm" : "Right arm"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.sessionHint}>Wear your watch on that wrist. Start with your arm relaxed at your side.</Text>
+            {watchStatus !== "connected" && (
+              <Pressable accessibilityRole="button" onPress={() => router.push("/settings")}>
+                <Text style={[styles.armText, { marginTop: 10 }]}>Connect your watch</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {/* ==========================================
             START / END EXERCISE
@@ -314,6 +262,7 @@ export default function ExerciseDetailScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.startExerciseButton,
+            startDisabled && { opacity: 0.5 },
 
             exerciseStarted &&
               styles.endExerciseButton,
@@ -322,6 +271,9 @@ export default function ExerciseDetailScreen() {
               styles.startExercisePressed,
           ]}
           onPress={toggleExercise}
+          disabled={startDisabled}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: startDisabled, busy: transitioning }}
         >
 
           <Ionicons
@@ -335,18 +287,32 @@ export default function ExerciseDetailScreen() {
           />
 
           <Text style={styles.startExerciseText}>
-            {exerciseStarted
-              ? "End Exercise"
-              : "Start Exercise"}
+            {isCurl && session.phase === "starting" ? "Preparing…"
+              : isCurl && session.phase === "stopping" ? "Finishing…"
+              : exerciseStarted ? "End Exercise"
+              : isCurl && session.phase === "ended" ? "Start Next Set" : "Start Exercise"}
           </Text>
 
         </Pressable>
 
 
+        {isCurl && session.message ? (
+          <View style={styles.setMessage}>
+            <Text accessibilityLiveRegion="polite" style={styles.armText}>{session.message}</Text>
+            {session.phase === "calibrating" && (
+              <Text style={styles.sessionHint}>Keep still for a moment. Begin curling when “Counting your reps” appears.</Text>
+            )}
+            {(session.phase === "ended" || session.phase === "interrupted") && (
+              <Text style={styles.sessionHint}>{session.reps} reps · {session.arm === "left" ? "Left arm" : "Right arm"}</Text>
+            )}
+          </View>
+        ) : null}
+
         {/* ==========================================
             CAMERA
         ========================================== */}
 
+        {cameraEnabled && permission?.granted && focused ? (
         <View style={styles.cameraCard}>
 
           <CameraView
@@ -395,7 +361,20 @@ export default function ExerciseDetailScreen() {
           </View>
 
         </View>
-
+        ) : cameraEnabled ? (
+          <View style={[styles.cardPlaceholder]}>
+            <Ionicons name="camera-outline" size={28} color="#367FBD" />
+            <Text style={{ color: "#555555", textAlign: "center" }}>Allow camera access to see your movement.</Text>
+            <Pressable accessibilityRole="button" onPress={() => {
+              if (permission?.canAskAgain === false) void Linking.openSettings();
+              else void requestPermission();
+            }}>
+              <Text style={{ color: "#367FBD", fontWeight: "600" }}>
+                {permission?.canAskAgain === false ? "Open Settings" : "Allow Camera"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* ==========================================
             REP COUNTER
@@ -412,10 +391,10 @@ export default function ExerciseDetailScreen() {
           </Text>
 
           <Text style={styles.counterTarget}>
-            of {exercise.reps}
+            {isCurl ? `Target: ${exercise.reps}` : `of ${exercise.reps}`}
           </Text>
 
-          <View
+          {!isCurl && <View
             style={styles.counterControls}
           >
 
@@ -441,7 +420,7 @@ export default function ExerciseDetailScreen() {
               />
             </Pressable>
 
-          </View>
+          </View>}
 
         </View>
 
@@ -453,10 +432,12 @@ export default function ExerciseDetailScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.completeButton,
+            isCurl && session.running && { opacity: 0.5 },
             pressed &&
               styles.completePressed,
           ]}
           onPress={completeExercise}
+          disabled={isCurl && session.running}
         >
 
           <Text style={styles.completeText}>
@@ -567,6 +548,15 @@ export default function ExerciseDetailScreen() {
 ===================================================== */
 
 const styles = StyleSheet.create({
+  armCard: { padding: 16, backgroundColor: "#EEF4F8", borderRadius: 16, marginBottom: 16 },
+  armTitle: { color: "#222222", fontSize: 16, fontWeight: "600", marginBottom: 12 },
+  armOptions: { flexDirection: "row", gap: 12 },
+  armOption: { flex: 1, alignItems: "center", padding: 13, borderRadius: 12, borderColor: "#367FBD", borderWidth: 1 },
+  armSelected: { backgroundColor: "#367FBD" },
+  armText: { fontSize: 15, fontWeight: "600", color: "#367FBD" },
+  sessionHint: { fontSize: 13, lineHeight: 20, color: "#555555", marginTop: 8 },
+  setMessage: { padding: 14, backgroundColor: "#EEF4F8", borderRadius: 12, marginBottom: 16 },
+  cardPlaceholder: { padding: 24, gap: 12, alignItems: "center", backgroundColor: "#EEF4F8", borderRadius: 16, marginBottom: 20 },
 
   /* ==============================================
      SCREEN

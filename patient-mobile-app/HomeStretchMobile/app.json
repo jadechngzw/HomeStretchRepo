@@ -8,7 +8,11 @@
         {
           "cameraPermission": "HomeStretch uses your camera to provide exercise guidance."
         }
-      ]
-    ]
+      ],
+      "react-native-ble-plx"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.anonymous.homestretch-mobile"
+    }
   }
 }
