@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "exercise_id": "014",
+  "exercise_name": "knee_flexion_extension",
+  "feature_columns": [
+    "duration_seconds",
+    "completion_error",
+    "pitch_rom",
+    "pitch_velocity_mean",
+    "pitch_peak_velocity",
+    "pitch_smoothness",
+    "yaw_rom",
+    "yaw_velocity_mean",
+    "yaw_peak_velocity",
+    "yaw_smoothness",
+    "roll_rom",
+    "roll_velocity_mean",
+    "roll_peak_velocity",
+    "roll_smoothness",
+    "pitch_yaw_correlation",
+    "pitch_roll_correlation",
+    "yaw_roll_correlation"
+  ],
+  "channel_order": [
+    "pitch",
+    "yaw",
+    "roll"
+  ],
+  "source_columns": [
+    0,
+    1,
+    2
+  ],
+  "sensor": "S3",
+  "dataset_placement": "lower leg, 10-20 cm below patella",
+  "intended_watch_placement": "ankle",
+  "deployment_validated": false,
+  "angle_units": "degrees",
+  "sampling_rate_hz_assumed": 50.0,
+  "timebase_verified_from_timestamps": false,
+  "smoothing": {
+    "type": "centered_moving_average",
+    "window_samples": 5,
+    "edge_mode": "nearest"
+  },
+  "angle_unwrap": {
+    "period_degrees": 360,
+    "axis": "time"
+  },
+  "source_quality": "reject adjacent angle jumps >180 degrees before unwrapping",
+  "padding": "trim trailing rows zero across all six source columns before selecting first three",
+  "baseline": "subtract first-five-sample per-channel mean after segmentation",
+  "segmentation": {
+    "channel_index": 2,
+    "channel_name": "roll",
+    "period_seconds": 2.45,
+    "prominence_degrees": 28.222900000000013,
+    "periodic_training_records": 256,
+    "selection_score": 36.44818156450985,
+    "minimum_distance_samples": 67,
+    "channel_candidates": [
+      {
+        "channel_index": 0,
+        "channel_name": "pitch",
+        "period_seconds": 1.24,
+        "prominence_degrees": 13.296850000000001,
+        "periodic_training_records": 272,
+        "selection_score": 28.247389106544667
+      },
+      {
+        "channel_index": 1,
+        "channel_name": "yaw",
+        "period_seconds": 1.93,
+        "prominence_degrees": 26.58279374999998,
+        "periodic_training_records": 250,
+        "selection_score": 35.4304456304287
+      },
+      {
+        "channel_index": 2,
+        "channel_name": "roll",
+        "period_seconds": 2.45,
+        "prominence_degrees": 28.222900000000013,
+        "periodic_training_records": 256,
+        "selection_score": 36.44818156450985
+      }
+    ],
+    "boundary_type": "valley"
+  },
+  "duration_limits_seconds": [
+    1.34,
+    5.8444
+  ],
+  "completion_error": {
+    "definition": "RMS of last-five-sample mean normalized pitch and roll",
+    "percentile": 95,
+    "threshold_degrees": 57.65943160084051,
+    "calibration_population": "training interior segments within training duration q01-q99",
+    "calibration_count": 980
+  },
+  "training_edge_policy": "exclude; retain in segment audit",
+  "scaler_mean": [
+    2.631208556149732,
+    20.241504091904158,
+    55.813927486630874,
+    80.48846963626825,
+    370.0121818181816,
+    -10.271333336135687,
+    111.01444791443873,
+    117.71983124547538,
+    631.7821443850265,
+    -10.821743843547747,
+    115.70815165775399,
+    117.30150602668797,
+    670.7405240641704,
+    -10.857857642942033,
+    -0.2713549853719301,
+    -0.05441430299148638,
+    0.7506290641513006
+  ],
+  "scaler_scale": [
+    1.0026233687711148,
+    14.054952626372998,
+    9.349051933078828,
+    31.59934044173293,
+    133.05390669736914,
+    0.8092927551867329,
+    38.31786192537631,
+    48.01644272839252,
+    293.62812394073876,
+    0.9049201078282869,
+    39.1807543292964,
+    48.38561424600203,
+    322.7173555820891,
+    0.9105692014573599,
+    0.6666395821479906,
+    0.712964171812508,
+    0.5738485594619156
+  ],
+  "contamination": 0.05,
+  "anomaly_score": "negative decision_function; positive means reference outlier",
+  "anomaly_threshold": 0.0,
+  "score_samples_threshold": -0.549193595468474,
+  "quality_failure_output": "unscorable; do not equate with typical/atypical"
+}

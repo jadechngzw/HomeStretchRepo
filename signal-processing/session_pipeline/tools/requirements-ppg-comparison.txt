@@ -1,0 +1,2 @@
+neurokit2==0.2.13
+matplotlib==3.11.2
