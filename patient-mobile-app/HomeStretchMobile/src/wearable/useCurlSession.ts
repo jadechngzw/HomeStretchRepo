@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { connection } from './useWearable';
 import { CurlSession, isSetRunning } from './curlSession';
 
-const session = new CurlSession(() => connection.getConnectedDevice());
+export const session = new CurlSession(() => connection.getConnectedDevice());
 connection.subscribe(() => {
   if (connection.getSnapshot().phase !== 'connected') session.interrupt('Watch disconnected. Reconnect before starting a new set.');
 });

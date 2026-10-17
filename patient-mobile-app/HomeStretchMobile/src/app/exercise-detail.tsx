@@ -2,7 +2,7 @@ import { useCurlSession } from "../wearable/useCurlSession";
 import type { Arm } from "../wearable/curlSession";
 import { useCameraPreference } from "../preferences/camera";
 import { useWearable } from "../wearable/useWearable";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import SettingsButton from "../components/SettingsButton";
 import {
   View,
@@ -26,7 +26,9 @@ import {
 } from "expo-router";
 
 import { StatusBar } from "expo-status-bar";
-
+import { useLiveGuidance } from "../wearable/useLiveGuidance";
+import { db } from "../firebase/config";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 /* =====================================================
    EXERCISE INFORMATION
@@ -99,6 +101,7 @@ export default function ExerciseDetailScreen() {
 
   const isCurl = (id || "bicep-curls") === "bicep-curls";
   const session = useCurlSession();
+  const guidance = useLiveGuidance();
   const [arm, setArm] = useState<Arm | null>(null);
   const [manualReps, setReps] = useState(0);
   const reps = isCurl ? session.reps : manualReps;
@@ -108,6 +111,20 @@ export default function ExerciseDetailScreen() {
     setFocused(true);
     return () => { setFocused(false); session.interrupt("Set interrupted. Start a new set when you return."); };
   }, [session.interrupt]));
+
+  useEffect(() => {
+    if (guidance.state !== "IDLE_POST" || !session.endedAt) return;
+    void addDoc(collection(db, "sessions"), {
+      exercise: id,
+      arm: session.arm,
+      num_reps: session.reps,
+      rep_durations: session.repDurations,
+      duration_sec: session.endedAt && session.startedAt
+        ? Math.round((session.endedAt - session.startedAt) / 1000) : 0,
+      atypical_flags: guidance.atypicalFlags,
+      timestamp: serverTimestamp(),
+    });
+  }, [guidance.state]);
 
   const [permission, requestPermission] =
     useCameraPermissions();
@@ -307,6 +324,19 @@ export default function ExerciseDetailScreen() {
             )}
           </View>
         ) : null}
+
+        {isCurl && guidance.state !== "IDLE_PRE" && (
+          <View style={[
+            styles.guidanceBanner,
+            guidance.state === "PAUSED" && styles.guidancePaused,
+            guidance.state === "IDLE_POST" && styles.guidanceDone,
+          ]}>
+            <Text style={styles.guidanceText}>{guidance.message}</Text>
+            {guidance.pauseReason && (
+              <Text style={styles.guidanceHint}>{guidance.pauseReason}</Text>
+            )}
+          </View>
+        )}
 
         {/* ==========================================
             CAMERA
@@ -926,4 +956,36 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
+// Live Guidance
+
+  guidanceBanner: {
+    padding: 14,
+    backgroundColor: "#EEF4F8",
+    borderRadius: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: "#367FBD",
+  },
+
+  guidancePaused: {
+    backgroundColor: "#FFF4E0",
+    borderLeftColor: "#E5A020",
+  },
+
+  guidanceDone: {
+    backgroundColor: "#E8F5ED",
+    borderLeftColor: "#55B96A",
+  },
+
+  guidanceText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#222222",
+  },
+
+  guidanceHint: {
+    fontSize: 13,
+    color: "#555555",
+    marginTop: 4,
+  },
 });
