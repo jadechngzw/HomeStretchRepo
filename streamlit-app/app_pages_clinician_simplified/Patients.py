@@ -13,7 +13,7 @@ st.set_page_config(layout="wide")
 # =====================================================================
 
 # Replace with the path to your HomeStretch.xlsx file.
-DATA_FILE = Path("/Users/angelcho/Desktop/HomeStretchRepo/Data.xlsx")
+DATA_FILE = Path(__file__).resolve().parents[2] / "Data.xlsx"
 
 # Firestore field on each session doc that links it to a patient.
 # ASSUMPTION - update if your schema uses a different field name.
