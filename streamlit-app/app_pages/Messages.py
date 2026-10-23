@@ -1,134 +1,84 @@
 import streamlit as st
-st.set_page_config(layout="wide")
-st.title("Messages")
+from datetime import datetime
 
-# -----------------------
-# STATE
-# -----------------------
-if "selected_chat" not in st.session_state:
-    st.session_state.selected_chat = None
+st.set_page_config(page_title="HomeStretch | Messages", layout="wide")
 
-if "messages" not in st.session_state:
-    st.session_state.messages = {}
+st.markdown("""
+<style>
+.block-container {max-width: 1250px; padding-top: 1.4rem; padding-bottom: 2.5rem;}
+.hs-header {background:#C4DCEF; border-radius:16px; padding:22px 28px; margin-bottom:20px;}
+.hs-header h1 {color:#285F91; font-size:30px; margin:0; font-weight:650;}
+.hs-header p {color:#527D9F; margin:5px 0 0; font-size:14px;}
+.hs-panel-title {color:#285F91; font-size:19px; font-weight:650; margin-bottom:6px;}
+.hs-muted {color:#73899C; font-size:13px;}
+div[data-testid="stVerticalBlockBorderWrapper"] {border-color:#BBD5E9; border-radius:15px;}
+.stButton > button {border-radius:11px; border:1px solid #BBD5E9;}
+.stButton > button[kind="primary"] {background:#367FBD; color:white; border-color:#367FBD;}
+.stTextInput input {border-radius:10px; border-color:#BBD5E9;}
+</style>
+""", unsafe_allow_html=True)
 
-patients = [f"Patient {i}" for i in range(1, 10)]
+# This is local prototype messaging only; no messages are sent to patients.
+PATIENTS = [f"Patient {i}" for i in range(1, 10)]
 
-# Initialize storage
-for p in patients:
-    if p not in st.session_state.messages:
-        st.session_state.messages[p] = []
+if "hs_selected_chat" not in st.session_state:
+    st.session_state.hs_selected_chat = None
+if "hs_messages" not in st.session_state:
+    st.session_state.hs_messages = {}
+if "hs_chat_drafts" not in st.session_state:
+    st.session_state.hs_chat_drafts = {}
+for name in PATIENTS:
+    st.session_state.hs_messages.setdefault(name, [])
+    st.session_state.hs_chat_drafts.setdefault(name, "")
 
-# -----------------------
-# LAYOUT
-# -----------------------
-col1, col2 = st.columns([1, 2])
+st.markdown('''<div class="hs-header"><h1>Messages</h1><p>Communicate with your patients</p></div>''', unsafe_allow_html=True)
 
-# ======================
-# LEFT: PATIENT LIST
-# ======================
-with col1:
+left, right = st.columns([1, 2.15], gap="medium")
 
-    st.markdown("### Patients")
+with left:
+    with st.container(border=True):
+        st.markdown('<div class="hs-panel-title">Patients</div>', unsafe_allow_html=True)
+        search = st.text_input("Search conversations", placeholder="Search patients...", label_visibility="collapsed")
+        with st.container(height=475, border=False):
+            matches = [p for p in PATIENTS if search.strip().lower() in p.lower()]
+            if not matches:
+                st.caption("No matching patients.")
+            for p in matches:
+                selected = st.session_state.hs_selected_chat == p
+                count = len(st.session_state.hs_messages[p])
+                label = f"{'●  ' if selected else '○  '}{p}" + (f"  ·  {count}" if count else "")
+                if st.button(label, key=f"hs_patient_{p}", use_container_width=True,
+                             type="primary" if selected else "secondary"):
+                    st.session_state.hs_selected_chat = p
+                    st.rerun()
 
-    st.markdown("""
-    <div style="
-        max-height: 500px;
-        overflow-y: auto;
-        padding-right: 5px;
-    ">
-    """, unsafe_allow_html=True)
+with right:
+    with st.container(border=True):
+        patient = st.session_state.hs_selected_chat
+        if patient is None:
+            st.markdown('<div class="hs-panel-title">Select a conversation</div>', unsafe_allow_html=True)
+            st.caption("Choose a patient on the left to view or write messages.")
+            st.info("Messages in this prototype are stored only in your current Streamlit session.")
+        else:
+            st.markdown(f'<div class="hs-panel-title">{patient}</div>', unsafe_allow_html=True)
+            st.caption("Prototype conversation · not connected to the patient iOS app")
+            with st.container(height=385, border=False):
+                history = st.session_state.hs_messages[patient]
+                if not history:
+                    st.caption("No messages yet. Start the conversation below.")
+                for msg in history:
+                    role = "assistant" if msg["sender"] == "clinician" else "user"
+                    with st.chat_message(role):
+                        st.write(msg["text"])
+                        st.caption(msg.get("time", ""))
+            with st.form(key=f"hs_send_form_{patient}", clear_on_submit=True):
+                msg = st.text_input("Message", placeholder="Type a message...", label_visibility="collapsed")
+                sent = st.form_submit_button("Send message →", type="primary", use_container_width=True)
+                if sent and msg.strip():
+                    st.session_state.hs_messages[patient].append({
+                        "sender": "clinician", "text": msg.strip(),
+                        "time": datetime.now().strftime("%I:%M %p")
+                    })
+                    st.rerun()
 
-    for p in patients:
-
-        if st.button(p, key=f"patient_{p}", use_container_width=True):
-            st.session_state.selected_chat = p
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ======================
-# RIGHT: CHAT WINDOW
-with col2:
-
-    if st.session_state.selected_chat is None:
-
-        st.markdown("""
-        <div style="
-            height:400px;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            color:#aaa;
-        ">
-            Click on a patient to message them...
-        </div>
-        """, unsafe_allow_html=True)
-
-    else:
-        patient = st.session_state.selected_chat
-
-        st.subheader(patient)
-        st.caption("Secure messaging with patient")
-        # -----------------------
-        # SCROLLABLE CHAT AREA
-        # -----------------------
-        st.markdown("""
-        <div style="
-            max-height:400px;
-            overflow-y:auto;
-            padding-right:10px;
-        ">
-        """, unsafe_allow_html=True)
-
-        for msg in st.session_state.messages[patient]:
-
-            if msg["sender"] == "patient":
-                st.markdown(f"""
-                <div style="
-                    background:#f3f6fb;
-                    padding:10px;
-                    border-radius:10px;
-                    margin-bottom:6px;
-                    width:70%;
-                ">
-                    {msg["text"]}
-                </div>
-                """, unsafe_allow_html=True)
-
-            else:
-                st.markdown(f"""
-                <div style="
-                    background:#dbe5f1;
-                    padding:10px;
-                    border-radius:10px;
-                    margin-bottom:6px;
-                    margin-left:auto;
-                    width:70%;
-                ">
-                    {msg["text"]}
-                </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-
-        # -----------------------
-        # FIXED INPUT BAR (BOTTOM FEEL)
-        # -----------------------
-        input_col, send_col = st.columns([6,1])
-
-        msg_input = input_col.text_input(
-            "",
-            placeholder="Send Message...",
-            key="msg_input"
-        )
-
-        if send_col.button("➤"):
-
-            if msg_input.strip() != "":
-                st.session_state.messages[patient].append({
-                    "sender": "clinician",
-                    "text": msg_input
-                })
-
-                st.rerun()
+st.caption("Prototype only: conversations are not persisted to Firestore and are not delivered to patients.")
