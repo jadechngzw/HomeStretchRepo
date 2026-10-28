@@ -10,7 +10,6 @@ st.set_page_config(
 pg = st.navigation([
     st.Page("app_pages/Patients.py", title="Patients", icon=None),
     st.Page("app_pages/Weekly_Progress.py", title="Weekly Progress", icon=None),
-    st.Page("app_pages/Alerts.py", title="Alerts", icon=None),
     st.Page("app_pages/Messages.py", title="Messages", icon=None)
 ])
 
