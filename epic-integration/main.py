@@ -4,6 +4,9 @@ import secrets
 import hashlib
 import base64
 import logging
+import time
+import threading
+from urllib.parse import quote
 
 from pathlib import Path
 from html import escape
@@ -11,7 +14,7 @@ from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -27,7 +30,12 @@ CLIENT_SECRET = os.environ["EPIC_CLIENT_SECRET"]
 REDIRECT_URI = os.environ["EPIC_REDIRECT_URI"]
 FHIR_BASE = os.environ["EPIC_FHIR_BASE"].rstrip("/")
 SESSION_SECRET = os.environ["SESSION_SECRET"]
+HANDOFF_SECRET = os.environ["HOMESTRETCH_HANDOFF_SECRET"]
 
+STREAMLIT_PATIENTS_URL = os.getenv(
+    "STREAMLIT_PATIENTS_URL",
+    "http://localhost:8501/Patients"
+)
 # This scope worked with your clinician sandbox login.
 SCOPES = "openid fhirUser"
 
@@ -46,6 +54,64 @@ app.add_middleware(
     https_only=False,
 )
 
+
+# =====================================================
+# EPIC TO STREAMLIT HANDOFF
+# Local development only
+# =====================================================
+
+_handoffs = {}
+_handoff_lock = threading.Lock()
+
+HANDOFF_TTL_SECONDS = 300
+
+
+@app.post("/internal/consume-handoff")
+def consume_handoff(
+    payload: dict,
+    request: Request,
+    x_homestretch_secret: str | None = Header(default=None)
+):
+    """
+    Transfer a synthetic Epic patient summary to Streamlit.
+
+    Tickets are single-use and expire after five minutes.
+    Epic access tokens are never sent to Streamlit.
+    """
+
+    if (
+        not x_homestretch_secret
+        or not secrets.compare_digest(
+            x_homestretch_secret,
+            HANDOFF_SECRET
+        )
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden"
+        )
+
+    ticket = payload.get("ticket")
+
+    if not isinstance(ticket, str) or len(ticket) > 256:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid ticket"
+        )
+
+    with _handoff_lock:
+        entry = _handoffs.pop(ticket, None)
+
+    if (
+        entry is None
+        or time.monotonic() > entry["expires"]
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket expired or already used"
+        )
+
+    return entry["patient"]
 
 # =====================================================
 # SMART ON FHIR CONFIGURATION
@@ -493,6 +559,45 @@ def callback(
     )
 
     # =================================================
+    # CREATE STREAMLIT HANDOFF
+    # =================================================
+
+    patient_summary = {
+        "id": str(patient_id),
+        "name": full_name,
+        "gender": str(gender),
+        "birthDate": str(birth_date),
+        "source": "Epic FHIR R4 Sandbox",
+    }
+
+    ticket = secrets.token_urlsafe(32)
+
+    with _handoff_lock:
+
+        now = time.monotonic()
+
+        # Remove expired tickets.
+        for key in list(_handoffs):
+            if _handoffs[key]["expires"] <= now:
+                del _handoffs[key]
+
+        _handoffs[ticket] = {
+            "patient": patient_summary,
+            "expires": now + HANDOFF_TTL_SECONDS,
+        }
+
+    joiner = (
+        "&" if "?" in STREAMLIT_PATIENTS_URL else "?"
+    )
+
+    streamlit_link = (
+        STREAMLIT_PATIENTS_URL
+        + joiner
+        + "epic_ticket="
+        + quote(ticket)
+    )
+
+    # =================================================
     # DISPLAY SUCCESS PAGE
     # =================================================
 
@@ -540,13 +645,24 @@ def callback(
             </p>
         </div>
 
-        <div class="card">
-            <h2>Next Development Step</h2>
+         <div class="card">
+            <h2>Open HomeStretch Clinician Dashboard</h2>
 
             <p>
-                Connect Epic patient context to the
-                existing HomeStretch Streamlit
-                clinician dashboard.
+                Transfer this synthetic Epic patient
+                to your local Streamlit Patients page.
+            </p>
+
+            <a
+                class="button"
+                href="{escape(streamlit_link, quote=True)}"
+            >
+                Open in Streamlit
+            </a>
+
+            <p class="note">
+                This one-time link expires in five minutes
+                and works only once.
             </p>
         </div>
         """
