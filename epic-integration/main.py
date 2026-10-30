@@ -320,6 +320,64 @@ def login(request: Request):
 
 
 # =====================================================
+# EPIC EHR LAUNCH - SMART ON FHIR
+# =====================================================
+
+@app.get("/launch")
+def ehr_launch(
+    request: Request,
+    iss: str,
+    launch: str,
+):
+    # Accept only the Epic sandbox FHIR server.
+    # Never allow an arbitrary iss URL to control
+    # where the backend sends requests.
+    if iss.rstrip("/") != FHIR_BASE:
+        raise HTTPException(
+            status_code=400,
+            detail="Unrecognized FHIR issuer",
+        )
+
+    if not launch:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing launch token",
+        )
+
+    config = get_smart_config()
+
+    verifier, challenge = make_pkce()
+    state = secrets.token_urlsafe(32)
+
+    request.session["oauth_state"] = state
+    request.session["pkce_verifier"] = verifier
+    request.session["launch_mode"] = "ehr"
+    request.session["launch_iss"] = iss.rstrip("/")
+
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "scope": "launch openid fhirUser",
+        "state": state,
+        "launch": launch,
+        "aud": iss,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+
+    authorization_url = (
+        config["authorization_endpoint"]
+        + "?"
+        + urlencode(params)
+    )
+
+    return RedirectResponse(
+        authorization_url,
+        status_code=302,
+    )
+
+# =====================================================
 # OAUTH CALLBACK
 # =====================================================
 
@@ -446,7 +504,41 @@ def callback(
 
     token_data = token_response.json()
     access_token = token_data.get("access_token")
+    launch_mode = request.session.pop(
+        "launch_mode", "standalone"
+    )
 
+    launch_iss = request.session.pop(
+        "launch_iss", None
+    )
+
+    if launch_mode == "ehr":
+        patient_id_to_read = token_data.get("patient")
+
+        if not patient_id_to_read:
+            return page(
+                "Missing Patient Context",
+                """
+                <div class="card">
+                    <h2>No patient context returned</h2>
+                    <p>
+                        Epic authorization succeeded,
+                        but the launch did not provide
+                        a patient identifier.
+                    </p>
+                </div>
+                """
+            )
+
+        if launch_iss != FHIR_BASE:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid launch issuer",
+            )
+
+    else:
+        # Preserve the working standalone demo.
+        patient_id_to_read = TEST_PATIENT_ID
     if not access_token:
         raise HTTPException(
             status_code=502,
@@ -458,7 +550,7 @@ def callback(
     # =================================================
 
     patient_url = (
-        f"{FHIR_BASE}/Patient/{TEST_PATIENT_ID}"
+        f"{FHIR_BASE}/Patient/{patient_id_to_read}"
     )
 
     try:
