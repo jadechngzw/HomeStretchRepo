@@ -13,6 +13,11 @@
     ],
     "ios": {
       "bundleIdentifier": "com.anonymous.homestretch-mobile"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "74811e25-e698-4595-9891-c10c98f5107d"
+      }
     }
   }
 }
