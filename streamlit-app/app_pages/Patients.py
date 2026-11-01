@@ -1117,7 +1117,6 @@ elif st.session_state.page == "builder":
 
 
 
-    col1, col2, col3 = st.columns([1, 2, 1])
 
 
 
