@@ -1,0 +1,34 @@
+rules_version = '2';
+
+// Patient app (Firebase Auth, uid == patient_id) is limited to its own data.
+// The Streamlit clinician app and the cloud pipeline use a service account,
+// which bypasses these rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /patients/{patientId} {
+      allow read: if signedIn() && request.auth.uid == patientId;
+      allow write: if false;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if signedIn() && resource.data.patient_id == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.patient_id == request.auth.uid
+        && request.resource.data.status == "in_progress";
+      allow update: if signedIn()
+        && resource.data.patient_id == request.auth.uid
+        && request.resource.data.patient_id == resource.data.patient_id;
+      allow delete: if false;
+    }
+
+    // Everything else (messages, etc.) stays closed to the app until it is built.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

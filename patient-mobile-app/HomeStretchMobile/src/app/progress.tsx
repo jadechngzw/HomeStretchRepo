@@ -15,9 +15,12 @@ import { router } from "expo-router";
 import {
   collection,
   getDocs,
+  query,
+  where,
+  Timestamp,
 } from "firebase/firestore";
 
-import { db } from "../firebase/config";
+import { auth, db } from "../firebase/config";
 
 type Session = {
   id: string;
@@ -28,6 +31,7 @@ type Session = {
   classification?: string;
   tremor_level?: string;
   file_name?: string;
+  started_at?: Timestamp;
 };
 
 export default function ProgressScreen() {
@@ -40,8 +44,15 @@ export default function ProgressScreen() {
 
   async function loadSessions() {
     try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+
+      // Only this patient's sessions (Firestore rules also enforce this).
       const snapshot = await getDocs(
-        collection(db, "sessions")
+        query(
+          collection(db, "sessions"),
+          where("patient_id", "==", uid)
+        )
       );
 
       const data: Session[] = [];
@@ -54,18 +65,13 @@ export default function ProgressScreen() {
       });
 
       /*
-       * Sort by the timestamp contained in the newer
-       * HomeStretch filenames.
-       *
-       * Example:
+       * Newest first: app sessions carry started_at; older pipeline
+       * uploads fall back to the timestamp in the filename, e.g.
        * session_20260408T143622_HomeStretch...
-       *
-       * If a filename does not contain a timestamp,
-       * it gets pushed toward the end.
        */
       data.sort((a, b) => {
-        const timeA = getFilenameTimestamp(a.file_name);
-        const timeB = getFilenameTimestamp(b.file_name);
+        const timeA = a.started_at?.toMillis() ?? getFilenameTimestamp(a.file_name);
+        const timeB = b.started_at?.toMillis() ?? getFilenameTimestamp(b.file_name);
 
         return timeB - timeA;
       });

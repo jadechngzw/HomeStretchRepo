@@ -27,8 +27,7 @@ import {
 
 import { StatusBar } from "expo-status-bar";
 import { useLiveGuidance } from "../wearable/useLiveGuidance";
-import { db } from "../firebase/config";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { useSessionSync } from "../firebase/useSessionSync";
 
 /* =====================================================
    EXERCISE INFORMATION
@@ -112,19 +111,6 @@ export default function ExerciseDetailScreen() {
     return () => { setFocused(false); session.interrupt("Set interrupted. Start a new set when you return."); };
   }, [session.interrupt]));
 
-  useEffect(() => {
-    if (guidance.state !== "IDLE_POST" || !session.endedAt) return;
-    void addDoc(collection(db, "sessions"), {
-      exercise: id,
-      arm: session.arm,
-      num_reps: session.reps,
-      rep_durations: session.repDurations,
-      duration_sec: session.endedAt && session.startedAt
-        ? Math.round((session.endedAt - session.startedAt) / 1000) : 0,
-      atypical_flags: guidance.atypicalFlags,
-      timestamp: serverTimestamp(),
-    });
-  }, [guidance.state]);
 
   const [permission, requestPermission] =
     useCameraPermissions();
@@ -134,6 +120,22 @@ export default function ExerciseDetailScreen() {
 
   const [manualStarted, setExerciseStarted] = useState(false);
   const exerciseStarted = isCurl ? session.running : manualStarted;
+  // Live Firestore record for the clinician dashboard.
+  useSessionSync({
+    exercise: id || "bicep-curls",
+    exerciseName: exercise.name,
+    arm: isCurl ? (session.arm ?? arm) : null,
+    targetReps: exercise.reps,
+    targetSets: exercise.sets,
+    running: exerciseStarted,
+    reps,
+    repDurations: isCurl ? session.repDurations : [],
+    atypicalFlags: guidance.atypicalFlags,
+    endStatus: () =>
+      isCurl
+        ? session.phase === "interrupted" ? "interrupted" : "completed"
+        : manualReps > 0 ? "completed" : "interrupted",
+  });
   const transitioning = isCurl && ["starting", "stopping"].includes(session.phase);
   const startDisabled = transitioning || (isCurl && !session.running && (!arm || watchStatus !== "connected"));
 
