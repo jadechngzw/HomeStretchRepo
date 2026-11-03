@@ -1,108 +1,26 @@
-// src/wearable/useLiveGuidance.ts
-import { useEffect, useRef, useState } from "react";
-import { session } from "./useCurlSession";
-
-// Mirror your Python constants
-const REP_GOAL = 10;
-const MIN_REP_DURATION = 0.8;
-const MAX_REP_DURATION = 3.0;
-const MAJORITY_THRESHOLD = 0.5;
-const ATYPICAL_THRESHOLD = 0.4;
-const HR_ACTIVE_MAX = 160;
-const PPG_COVERAGE_MIN = 70;
-
-export type GuidanceState = "IDLE_PRE" | "EXERCISING" | "PAUSED" | "IDLE_POST";
-
-export interface GuidanceSnapshot {
-  state: GuidanceState;
-  message: string;
-  pauseReason: string | null;
-  atypicalFlags: string[];
-  repCount: number;
-}
-
+import { useEffect, useState } from 'react';
+import { session } from './useCurlSession';
+import { paceCue } from '../baseline/liveGuidance';
+export type GuidanceState = 'IDLE_PRE' | 'EXERCISING' | 'PAUSED' | 'IDLE_POST';
+export interface GuidanceSnapshot { state: GuidanceState; message: string; pauseReason: string | null; atypicalFlags: string[]; repCount: number }
+const initial = (): GuidanceSnapshot => ({state:'IDLE_PRE',message:'Ready to begin',pauseReason:null,atypicalFlags:[],repCount:0});
 export function useLiveGuidance() {
-  const [guidance, setGuidance] = useState<GuidanceSnapshot>({
-    state: "IDLE_PRE",
-    message: "Ready to begin",
-    pauseReason: null,
-    atypicalFlags: [],
-    repCount: 0,
-  });
-
-  // Use refs so the onRep callback always sees current values
-  const stateRef = useRef<GuidanceState>("IDLE_PRE");
-  const durationsRef = useRef<number[]>([]);
-  const atypicalFlagsRef = useRef<string[]>([]);
-
-  const update = (patch: Partial<GuidanceSnapshot>) => {
-    setGuidance(prev => {
-      const next = { ...prev, ...patch };
-      stateRef.current = next.state;
-      return next;
+  const [guidance,setGuidance]=useState< GuidanceSnapshot >(initial);
+  useEffect(()=>{
+    let sessionId=session.getSnapshot().sessionId;
+    let durations:number[]=[];
+    const unsubscribe=session.subscribe(()=>{
+      const state=session.getSnapshot();
+      if(state.sessionId!==sessionId){sessionId=state.sessionId;durations=[];setGuidance(initial());}
+      if(state.phase==='ended'||state.phase==='interrupted')setGuidance(current=>({...current,state:'IDLE_POST',message:state.phase==='ended'?'Set complete':'Set interrupted',pauseReason:null}));
     });
-  };
-
-  useEffect(() => {
-    // Reset when a new set starts
-    stateRef.current = "IDLE_PRE";
-    durationsRef.current = [];
-    atypicalFlagsRef.current = [];
-    setGuidance({ state: "IDLE_PRE", message: "Ready to begin",
-      pauseReason: null, atypicalFlags: [], repCount: 0 });
-
-    const unsubRep = session.onRep((rep) => {
-      durationsRef.current.push(rep.durationSec);
-      const repCount = rep.count;
-      const durations = durationsRef.current;
-      const currentState = stateRef.current;
-
-      // IDLE_PRE → EXERCISING on first rep
-      if (currentState === "IDLE_PRE") {
-        update({ state: "EXERCISING", message: `Rep ${repCount} — keep going!`, repCount });
-        return;
-      }
-
-      if (currentState !== "EXERCISING") return;
-
-      // Check rep timing (majority threshold)
-      const slowReps = durations.filter(d => d > MAX_REP_DURATION).length;
-      const fastReps = durations.filter(d => d < MIN_REP_DURATION).length;
-      if (slowReps / durations.length > MAJORITY_THRESHOLD) {
-        update({ state: "PAUSED", pauseReason: "Most reps are too slow — try to maintain a steady pace",
-          message: "Pause: reps too slow", repCount });
-        return;
-      }
-      if (fastReps / durations.length > MAJORITY_THRESHOLD) {
-        update({ state: "PAUSED", pauseReason: "Most reps are too fast — slow down for better form",
-          message: "Pause: reps too fast", repCount });
-        return;
-      }
-
-      // Session complete
-      if (repCount >= REP_GOAL) {
-        update({ state: "IDLE_POST", message: `Great work! ${repCount} reps completed.`,
-          pauseReason: null, atypicalFlags: atypicalFlagsRef.current, repCount });
-        return;
-      }
-
-      update({ state: "EXERCISING", message: `Rep ${repCount} of ${REP_GOAL}`, repCount });
+    const unsubscribeRep=session.onRep(rep=>{
+      durations.push(rep.durationSec);
+      const pace=paceCue(durations);
+      setGuidance({state:'EXERCISING',repCount:rep.count,atypicalFlags:[],pauseReason:null,
+        message:pace==='slow'?'Try a slightly quicker, steady pace':pace==='fast'?'Slow down a little':rep.count>=10?'Target reached. End the set when you’re ready.':`Rep ${rep.count} of 10 — steady pace`});
     });
-
-    // Watch for session ending
-    const unsubSession = session.subscribe(() => {
-      const snap = session.getSnapshot();
-      if (snap.phase === "ended" || snap.phase === "interrupted") {
-        if (stateRef.current !== "IDLE_POST") {
-          update({ state: "IDLE_POST",
-            message: snap.phase === "ended" ? "Set complete" : "Set interrupted",
-            atypicalFlags: atypicalFlagsRef.current });
-        }
-      }
-    });
-
-    return () => { unsubRep(); unsubSession(); };
-  }, []);
-
+    return()=>{unsubscribe();unsubscribeRep();};
+  },[]);
   return guidance;
 }

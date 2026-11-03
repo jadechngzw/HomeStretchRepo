@@ -1,3 +1,4 @@
+import { useSessionSync } from "../sync/useSessionSync";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { Stack, router, useSegments } from "expo-router";
@@ -8,6 +9,7 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../firebase/config";
 
 export default function RootLayout() {
+  useSessionSync();
   const segments = useSegments();
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
