@@ -9,9 +9,12 @@ from pathlib import Path
 import firebase_admin
 
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 import datetime
 from session_schema import normalize_session, patient_key
+import os
+import requests
 
 
 
@@ -32,6 +35,10 @@ REPO_ROOT = next((parent for parent in Path(__file__).resolve().parents
                   if parent.name == "HomeStretchRepo"), Path(__file__).resolve().parent)
 FIRESTORE_DEMO_ID = "__firestore_sessions__"
 FIRESTORE_NAMED_PREFIX = "__firestore_name__:"
+# Registered patients: documents in patients/{uid}; uid == sessions.patient_id
+FIRESTORE_PATIENT_PREFIX = "__firestore_patient__:"
+PATIENTS_COLLECTION = "patients"
+LIVE_REFRESH = "3s"  # how often the live session panel re-queries Firestore
 FIRESTORE_COLLECTION = "sessions"
 INACTIVE_AFTER_DAYS = 30  # Prototype activity threshold, not a clinical assessment.
 
@@ -101,6 +108,47 @@ def load_all_firestore_sessions():
     return sessions
 
 
+@st.cache_data(ttl=20, show_spinner=False)
+def load_registered_patients():
+    """patients/{uid} documents. The uid is the patient's Firebase Auth uid
+    and matches sessions.patient_id written by the patient app."""
+    patients = []
+    for snapshot in db.collection(PATIENTS_COLLECTION).stream():
+        data = snapshot.to_dict() or {}
+        data["id"] = snapshot.id
+        data["name"] = (data.get("name") or "").strip() or f"Patient {snapshot.id[:6]}"
+        patients.append(data)
+    patients.sort(key=lambda p: p["name"].casefold())
+    return patients
+
+
+def registered_patient_ids():
+    return {p["id"] for p in load_registered_patients()}
+
+
+def get_registered_patient(uid):
+    return next((p for p in load_registered_patients() if p["id"] == uid), None)
+
+
+def load_live_sessions(uid):
+    """Uncached read of one patient's sessions, for the live panel.
+    Equality filter only, so no composite index is needed."""
+    query = db.collection(FIRESTORE_COLLECTION).where(filter=FieldFilter("patient_id", "==", uid))
+    sessions = []
+    for snapshot in query.stream():
+        data = snapshot.to_dict() or {}
+        data["id"] = snapshot.id
+        sessions.append(data)
+    return sessions
+
+
+def exercise_label(session):
+    exercise = session.get("exercise")
+    if isinstance(exercise, dict):
+        return exercise.get("name") or "—"
+    return session.get("exercise_name") or exercise or "—"
+
+
 def normalized_patient_id(value):
     if value is None:
         return None
@@ -121,6 +169,9 @@ def normalized_patient_name(value):
 
 
 def firestore_patient_name(session):
+    # Sessions from registered patients are grouped by patient_id, not by name.
+    if session.get("patient_id") in registered_patient_ids():
+        return None
     for field in ("Patient", "patient_name", "patientName"):
         value = session.get(field)
         if normalized_patient_name(value):
@@ -134,7 +185,12 @@ def get_all_sessions(patient_id=None, patient_name=None):
     if patient_id is None and patient_name is None:
         return sessions
     if patient_id == FIRESTORE_DEMO_ID:
-        return [s for s in sessions if not patient_key(s)]
+        registered = registered_patient_ids()
+        return [s for s in sessions if not firestore_patient_name(s)
+                and s.get("patient_id") not in registered]
+    if isinstance(patient_id, str) and patient_id.startswith(FIRESTORE_PATIENT_PREFIX):
+        uid = patient_id[len(FIRESTORE_PATIENT_PREFIX):]
+        return [s for s in sessions if s.get("patient_id") == uid]
     if isinstance(patient_id, str) and patient_id.startswith(FIRESTORE_NAMED_PREFIX):
         key = patient_id[len(FIRESTORE_NAMED_PREFIX):]
     else:
@@ -166,6 +222,9 @@ def needs_review(session):
     if label in ("atypical", "poor control", "poor control / tremor dominant"):
         return True
     if isinstance(session.get("num_atypical"), (int, float)) and session["num_atypical"] > 0:
+        return True
+    flags = session.get("atypical_flags")
+    if isinstance(flags, list) and len(flags) > 0:
         return True
     guidance = session.get("guidance")
     if isinstance(guidance, dict):
@@ -337,6 +396,44 @@ def render_session_metrics(session):
         st.caption("Movement signal graph unavailable: no waveform is stored in this document.")
 
 
+@st.fragment(run_every=LIVE_REFRESH)
+def live_session_panel(uid):
+    """Shows the set the patient is doing right now. When a set finishes,
+    clears the cached session list and reruns the page so it joins the timeline."""
+    try:
+        sessions = load_live_sessions(uid)
+    except Exception as exc:  # network / permission problems should not break the page
+        st.caption(f"Live data unavailable: {exc}")
+        return
+    live = [s for s in sessions if s.get("status") == "in_progress"]
+    finished = {s["id"] for s in sessions if s.get("status") in ("completed", "interrupted")}
+
+    seen_key = f"live_finished_{uid}"
+    previous = st.session_state.get(seen_key)
+    st.session_state[seen_key] = finished
+    if previous is not None and finished - previous:
+        load_all_firestore_sessions.clear()
+        st.rerun()
+
+    with st.container(border=True):
+        soft_card()
+        section_heading("Live Session")
+        if not live:
+            st.caption(f"No exercise in progress. Checking every {LIVE_REFRESH}.")
+            return
+        current = max(live, key=lambda s: s.get("updated_at") or s.get("started_at") or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Exercise", exercise_label(current))
+        target = current.get("target_reps")
+        reps = current.get("num_reps", 0)
+        c2.metric("Reps", f"{reps} / {target}" if target else reps)
+        arm = current.get("arm")
+        c3.metric("Arm", arm.title() if isinstance(arm, str) else "—")
+        if target:
+            st.progress(max(0.0, min(1.0, float(reps) / float(target))))
+        st.caption(f"Started {format_session_time(current.get('started_at'))} · updated {format_session_time(current.get('updated_at'))}")
+
+
 # -----------------------
 
 # SESSION STATE
@@ -446,6 +543,53 @@ button[kind="primary"] {background:#367FBD!important;color:white!important;}
 .hs-white-card {display:none;}
 [data-testid="stVerticalBlockBorderWrapper"]:has(.hs-soft-card) {background:#EDF5FB;border:1px solid #D7E7F2!important;border-radius:14px!important;padding:12px 16px;}
 .hs-soft-card {display:none;}
+
+/* HomeStretch patient-profile visual refresh: presentation only */
+:root {--hs-navy:#163E67;--hs-blue:#246FAE;--hs-line:#AFCDE4;}
+[data-testid="stAppViewContainer"] {background:linear-gradient(180deg,#F5F9FD 0%,#FFFFFF 55%);}
+.block-container {max-width:1370px;}
+.hs-section {font-size:1.18rem;font-weight:750;color:#174B78;margin:8px 0 13px;letter-spacing:-.015em;}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-white-card) {
+ background:linear-gradient(145deg,#FFFFFF 68%,#F7FBFF 100%);
+ border:1.6px solid #B7D0E5!important;
+ border-radius:17px!important;
+ padding:19px 22px!important;
+ box-shadow:0 4px 15px rgba(28,77,116,.07),0 1px 3px rgba(28,77,116,.04);
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-white-card) .hs-section {
+ border-left:4px solid #317DB8;padding-left:12px;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-soft-card) {
+ background:#E7F2FC;border:1.6px solid #B7D0E5!important;
+ border-radius:16px!important;padding:18px 21px!important;
+ box-shadow:0 3px 12px rgba(28,77,116,.05);
+}
+[data-testid="stMetric"] {
+ background:linear-gradient(135deg,#E7F3FE,#F3F9FE);
+ border:1.5px solid #C0DAEE;
+ border-radius:15px;padding:17px 19px;
+ box-shadow:0 2px 8px rgba(40,103,153,.055);
+}
+[data-testid="stMetricValue"] {color:#1C5E96;font-weight:750;}
+[data-testid="stMetricLabel"] {color:#486B88;font-weight:600;}
+.stTabs [data-baseweb="tab-list"] {background:#EAF3FB;border:1.5px solid #BBD5EA;padding:7px;gap:10px;}
+.stTabs [data-baseweb="tab"] {background:#F9FCFF;border:1.5px solid #BBD5EA;color:#1C5485!important;font-weight:750;min-height:60px;}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {background:linear-gradient(110deg,#286DAA,#1A568F)!important;border-color:#1A568F!important;box-shadow:0 4px 12px rgba(30,92,145,.23);}
+.stButton>button {border:1.5px solid #A9CBE4;color:#205E96;font-weight:700;min-height:40px;box-shadow:0 1px 3px rgba(30,80,125,.04);}
+.stButton>button:hover {background:#E6F2FC;border-color:#2E7BB7;box-shadow:0 3px 9px rgba(30,80,125,.1);}
+[data-testid="stExpander"] {border:1.5px solid #C2D9EA;border-radius:12px;}
+/* Stronger profile identity banner; does not change the patient roster. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-profile-banner) {
+ background:linear-gradient(105deg,#D9EBFA 0%,#E9F4FD 60%,#F7FBFF 100%);
+ border:1.5px solid #B4D2E9!important;border-radius:17px!important;
+ padding:18px 24px!important;box-shadow:0 3px 12px rgba(27,85,132,.08);
+}
+.hs-profile-banner {display:none;}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-profile-banner) h3 {font-size:1.6rem!important;font-weight:750!important;color:#174B78!important;}
+@media(max-width:700px) {
+ [data-testid="stVerticalBlockBorderWrapper"]:has(.hs-white-card) {padding:12px!important;}
+ .stTabs [data-baseweb="tab"] {min-height:48px;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -493,6 +637,183 @@ def select_patient(name, pid):
 
 st.markdown('<div class="hs-banner"><h1>Patients</h1><p>HomeStretch · Clinician Dashboard</p></div>', unsafe_allow_html=True)
 
+# =====================================================
+# EPIC SANDBOX HANDOFF (local development only)
+# =====================================================
+# A short-lived, single-use ticket is exchanged server-to-server.
+# Epic OAuth tokens and client secrets are never sent to Streamlit.
+if "epic_sandbox_patient" not in st.session_state:
+    st.session_state.epic_sandbox_patient = None
+
+handoff_ticket = st.query_params.get("epic_ticket")
+if handoff_ticket:
+    # Clear the ticket from the address bar immediately.
+    del st.query_params["epic_ticket"]
+    handoff_secret = os.getenv("HOMESTRETCH_HANDOFF_SECRET", "")
+    if not handoff_secret:
+        st.error("Epic handoff is not configured in Streamlit. Set HOMESTRETCH_HANDOFF_SECRET.")
+    else:
+        try:
+            response = requests.post(
+                "http://127.0.0.1:8000/internal/consume-handoff",
+                json={"ticket": str(handoff_ticket)},
+                headers={"X-HomeStretch-Secret": handoff_secret},
+                timeout=8,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get("id") and data.get("name"):
+                st.session_state.epic_sandbox_patient = data
+                st.session_state.page = "patients"
+                st.session_state.selected_patient = None
+                st.session_state.selected_patient_id = None
+                st.success("Epic sandbox patient retrieved successfully.")
+            else:
+                st.error("Epic returned an incomplete patient summary.")
+        except requests.RequestException:
+            st.error("Epic handoff failed or expired. Return to localhost:8000 and connect again.")
+
+
+# =====================================================
+# EPIC SANDBOX CLASSROOM DEMO (NO FIRESTORE WRITES)
+# =====================================================
+EPIC_DEMO_PROFILE_ID = "__epic_sandbox_demo__"
+
+
+def epic_demo_sessions():
+    """Clearly fictional rehab sessions; not associated with Epic clinical data."""
+    return [
+        {"date": "Oct 19, 2026", "exercise": "Bicep curl", "side": "Right",
+         "reps": 10, "typical": 7, "atypical": 3, "duration": 112.0,
+         "classification": "Needs Review", "fatigue_before": 3, "fatigue_after": 5},
+        {"date": "Oct 21, 2026", "exercise": "Bicep curl", "side": "Right",
+         "reps": 12, "typical": 10, "atypical": 2, "duration": 108.5,
+         "classification": "Typical", "fatigue_before": 2, "fatigue_after": 4},
+        {"date": "Oct 23, 2026", "exercise": "Bicep curl", "side": "Right",
+         "reps": 12, "typical": 11, "atypical": 1, "duration": 105.0,
+         "classification": "Typical", "fatigue_before": 2, "fatigue_after": 3},
+    ]
+
+
+def render_epic_demo_profile():
+    """Separate synthetic example: does not assign Firestore recordings to Epic patient."""
+    patient = st.session_state.get("epic_sandbox_patient")
+    if not patient:
+        st.warning("Epic sandbox patient is not loaded. Reconnect through FastAPI.")
+        if st.button("Back to roster", key="epic_missing_back"):
+            st.session_state.selected_patient = None
+            st.session_state.selected_patient_id = None
+            st.rerun()
+        return
+
+    if st.button("← Back to Patients", key="epic_demo_back"):
+        st.session_state.selected_patient = None
+        st.session_state.selected_patient_id = None
+        st.session_state.epic_demo_history = False
+        st.session_state.epic_demo_detail = None
+        st.rerun()
+
+    with st.container(border=True):
+        white_card()
+        st.subheader(patient.get("name", "Epic Sandbox Patient"))
+        st.caption("Epic FHIR R4 sandbox · Synthetic patient")
+        st.info("CLASSROOM DEMONSTRATION: All rehabilitation sessions below are invented example data, not Epic records or HomeStretch Firestore measurements.")
+
+    sessions = epic_demo_sessions()
+    if st.session_state.get("epic_demo_detail") is not None:
+        idx = st.session_state.epic_demo_detail
+        if st.button("← Back to Session History", key="epic_detail_back"):
+            st.session_state.epic_demo_detail = None
+            st.rerun()
+        if 0 <= idx < len(sessions):
+            item = sessions[idx]
+            section_heading("Example Session Details")
+            st.caption(f"{item['date']} · {item['exercise']} · {item['side']} arm")
+            a,b,c=st.columns(3)
+            a.metric("Repetitions", item['reps'])
+            b.metric("Typical", item['typical'])
+            c.metric("Atypical", item['atypical'])
+            with st.container(border=True):
+                white_card()
+                st.write("**Movement classification:**", item['classification'])
+                st.write("**Duration:**", f"{item['duration']:.1f} sec")
+                st.write("**Fatigue (before / after):**", f"{item['fatigue_before']} / 10 → {item['fatigue_after']} / 10")
+                st.caption("Illustrative numbers only. No real IMU/PPG data was used.")
+        return
+
+    if st.session_state.get("epic_demo_history", False):
+        section_heading("Example Session History")
+        if st.button("← Back to Profile", key="epic_history_back"):
+            st.session_state.epic_demo_history = False
+            st.rerun()
+        for idx in reversed(range(len(sessions))):
+            item=sessions[idx]
+            with st.container(border=True):
+                white_card()
+                left,right=st.columns([4,1], vertical_alignment="center")
+                left.markdown(f"**{item['date']} · {item['exercise']}**")
+                left.caption(f"{item['reps']} reps · {item['classification']}")
+                with right:
+                    if st.button("View Details", key=f"epic_example_{idx}"):
+                        st.session_state.epic_demo_detail = idx
+                        st.rerun()
+        return
+
+    m1,m2,m3=st.columns(3)
+    m1.metric("Example sessions",len(sessions))
+    m2.metric("Latest example",sessions[-1]['date'])
+    m3.metric("Latest typical reps",f"{sessions[-1]['typical']}/{sessions[-1]['reps']}")
+
+    tab_info,tab_sessions,tab_latest=st.tabs(["Information", "Sessions", "Latest Session"])
+    with tab_info:
+        left,right=st.columns(2)
+        with left:
+            with st.container(border=True):
+                white_card()
+                section_heading("Epic Patient Information")
+                st.markdown(f"**FHIR Patient ID:** {patient.get('id','Unavailable')}")
+                st.markdown(f"**Gender:** {patient.get('gender','Unavailable')}")
+                st.markdown(f"**Date of birth:** {patient.get('birthDate','Unavailable')}")
+                st.caption("Retrieved from Epic's synthetic sandbox record.")
+        with right:
+            with st.container(border=True):
+                white_card()
+                section_heading("HomeStretch Rehabilitation")
+                st.caption("Example exercise plan: Right-arm bicep curls · 3 sessions/week")
+                st.caption("Demonstration only; no prescription was retrieved from Epic.")
+    with tab_sessions:
+        with st.container(border=True):
+            white_card()
+            section_heading("Session History")
+            st.caption("View the three synthetic example recordings.")
+            if st.button("View Session History →", key="epic_demo_history_btn", use_container_width=True):
+                st.session_state.epic_demo_history = True
+                st.rerun()
+        chart=pd.DataFrame([{"Session":s['date'], "Repetitions":s['reps'], "Duration (sec)":s['duration']} for s in sessions])
+        with st.container(border=True):
+            white_card()
+            section_heading("Repetitions per Session")
+            st.bar_chart(chart.set_index("Session")["Repetitions"])
+        with st.container(border=True):
+            white_card()
+            section_heading("Session Duration Trend")
+            st.line_chart(chart.set_index("Session")["Duration (sec)"])
+    with tab_latest:
+        item=sessions[-1]
+        with st.container(border=True):
+            white_card()
+            section_heading("Latest Example Session")
+            st.caption(f"{item['date']} · {item['exercise']}")
+            a,b,c=st.columns(3)
+            a.metric("Total reps",item['reps'])
+            b.metric("Typical",item['typical'])
+            c.metric("Atypical",item['atypical'])
+            st.write("**Movement classification:**",item['classification'])
+            st.write("**Duration:**",f"{item['duration']:.1f} sec")
+            st.write("**Fatigue before / after:**",f"{item['fatigue_before']}/10 → {item['fatigue_after']}/10")
+            st.caption("All movement metrics are simulated; not validated clinical outputs.")
+
+
 # -----------------------
 
 # HELPER: STATUS COLORS
@@ -501,7 +822,7 @@ st.markdown('<div class="hs-banner"><h1>Patients</h1><p>HomeStretch · Clinician
 
 def render_status(status):
     """Use native Streamlit text, avoiding raw HTML/CSS shown as code."""
-    icons = {"Active": "🟢", "Needs Review": "🟡", "Inactive": "🔴", "Unlinked Sessions": "🔵", }
+    icons = {"Active": "🟢", "Needs Review": "🟡", "Inactive": "🔴", "Unlinked Sessions": "🔵", "Epic Demo": "🔵", }
     st.write(f"{icons.get(status, '⚪')} {status}")
 
 
@@ -523,6 +844,10 @@ if st.session_state.page == "patients":
         demo_sessions = get_all_sessions(FIRESTORE_DEMO_ID)
         named_firestore_patients = get_named_firestore_patients()
         status_by_name = {}
+        for registered in load_registered_patients():
+            status_by_name["registered:" + registered["id"]] = derive_firestore_status(
+                get_all_sessions(FIRESTORE_PATIENT_PREFIX + registered["id"])
+            )
         for key, name in named_firestore_patients:
             status_by_name[key] = derive_firestore_status(
                 get_all_sessions(FIRESTORE_NAMED_PREFIX + key)
@@ -531,16 +856,59 @@ if st.session_state.page == "patients":
         review_count = sum(v == "Needs Review" for v in status_by_name.values())
         inactive_count = sum(v == "Inactive" for v in status_by_name.values())
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Named patients", len(named_firestore_patients))
+        k1.metric("Patients", len(status_by_name))
         k2.metric("Active", active_count)
         k3.metric("Needs Review", review_count)
         k4.metric("Inactive", inactive_count)
         st.caption("Statuses are provisional: Needs Review = explicit atypical movement/flag; Inactive = no recording in 30 days; Active = other recent activity. They do not measure adherence or clinical safety.")
         search_term = st.text_input("Search patients", placeholder="Patient name", key="patient_roster_search")
-        status_filter = st.selectbox("Filter status", ["All", "Active", "Needs Review", "Inactive", "Unlinked Sessions"], key="patient_roster_filter")
+        status_filter = st.selectbox("Filter status", ["All", "Active", "Needs Review", "Inactive", "Unlinked Sessions", "Epic Demo"], key="patient_roster_filter")
         headers = st.columns([2.3, 1.25, 1.25, 1.2, 2.2, .85])
         for col, label in zip(headers, ["Patient", "Status", "Sessions", "Latest", "Notes", "Profile"]):
             col.markdown(f"**{label}**")
+        # Epic sandbox patient appears in the same roster as Firestore patients.
+        # The session counts below are simulated classroom data, not Firestore data.
+        epic_patient = st.session_state.get("epic_sandbox_patient")
+        if epic_patient:
+            epic_name = epic_patient.get("name", "Epic sandbox patient")
+            matches_search = (not search_term or search_term.casefold() in epic_name.casefold())
+            matches_filter = status_filter in ("All", "Epic Demo")
+            if matches_search and matches_filter:
+                def open_epic_demo():
+                    st.session_state.selected_patient = epic_name
+                    st.session_state.selected_patient_id = EPIC_DEMO_PROFILE_ID
+                    st.session_state.epic_demo_history = False
+                    st.session_state.epic_demo_detail = None
+                    st.rerun()
+
+                roster_entry(
+                    epic_name,
+                    "Epic Demo",
+                    f"{len(epic_demo_sessions())} simulated",
+                    None,
+                    "Epic sandbox demographics; simulated rehabilitation sessions",
+                    None,
+                    "epic_patient_profile_view",
+                    open_epic_demo,
+                )
+
+        for registered in load_registered_patients():
+            registered_id = FIRESTORE_PATIENT_PREFIX + registered["id"]
+            registered_sessions = get_all_sessions(registered_id)
+            status = derive_firestore_status(registered_sessions)
+            if status_filter not in ("All", status):
+                continue
+            if search_term and search_term.casefold() not in registered["name"].casefold():
+                continue
+            last = format_session_time(registered_sessions[-1].get("session_time")) if registered_sessions else "—"
+            live_now = any(x.get("status") == "in_progress" for x in registered_sessions)
+            roster_entry(
+                registered["name"], status, f"{len(registered_sessions)} sessions", None,
+                ("Exercising now · " if live_now else "") + f"Last: {last}", None,
+                "registered_" + registered["id"],
+                lambda n=registered["name"], p=registered_id: select_patient(n, p),
+            )
+
         for name_key, display_name in named_firestore_patients:
             named_id = FIRESTORE_NAMED_PREFIX + name_key
             named_sessions = get_all_sessions(named_id)
@@ -564,6 +932,9 @@ if st.session_state.page == "patients":
                 lambda: select_patient("Unlinked Firestore Sessions", FIRESTORE_DEMO_ID),
             )
 
+    elif st.session_state.selected_patient_id == EPIC_DEMO_PROFILE_ID:
+        render_epic_demo_profile()
+
     else:
 
         patient = st.session_state.selected_patient
@@ -579,7 +950,7 @@ if st.session_state.page == "patients":
         profile_sessions = get_all_sessions(pid, patient)
         latest_profile = profile_sessions[-1] if profile_sessions else None
         with st.container(border=True):
-            white_card()
+            st.markdown('<span class="hs-profile-banner"></span>', unsafe_allow_html=True)
             top_left, top_right = st.columns([4, 1], vertical_alignment="center")
             with top_left:
                 st.subheader(patient)
@@ -599,6 +970,8 @@ if st.session_state.page == "patients":
         else:
             st.caption("Prototype status is based on available recordings, not verified adherence or clinical safety.")
         render_pain_flag(get_latest_pain(pid))
+        if isinstance(pid, str) and pid.startswith(FIRESTORE_PATIENT_PREFIX):
+            live_session_panel(pid[len(FIRESTORE_PATIENT_PREFIX):])
 
         tab1, tab2, tab3 = st.tabs(["Information", "Sessions", "Latest Session"])
 
@@ -617,7 +990,14 @@ if st.session_state.page == "patients":
                 with st.container(border=True):
                     white_card()
                     section_heading("Clinical Overview")
-                    st.caption("Stroke history, assistive devices and clinical risks have not been entered in the current session records.")
+                    record = get_registered_patient(pid[len(FIRESTORE_PATIENT_PREFIX):]) if isinstance(pid, str) and pid.startswith(FIRESTORE_PATIENT_PREFIX) else None
+                    shown = False
+                    for field, label in (("dob", "Date of birth"), ("diagnosis", "Diagnosis"), ("affected_side", "Affected side"), ("epic_patient_id", "Epic patient ID")):
+                        if record and record.get(field):
+                            st.write(f"**{label}:** {record[field]}")
+                            shown = True
+                    if not shown:
+                        st.caption("Stroke history, assistive devices and clinical risks have not been entered in the current session records.")
                 with st.container(border=True):
                     white_card()
                     section_heading("Functional Baseline")
@@ -651,7 +1031,9 @@ if st.session_state.page == "patients":
                     with st.expander("View recording details"):
                         st.dataframe(pd.DataFrame([{
                             "Date":format_session_time(x.get("session_time")),
-                            "Exercise":(x.get("exercise") or {}).get("name","—") if isinstance(x.get("exercise"),dict) else "—",
+                            "Exercise":exercise_label(x),
+                            "Reps":x.get("num_reps","—"),
+                            "Status":x.get("status","—"),
                             "Recording":x.get("file_name") or x.get("raw_file") or "—",
                             "Classification":x.get("classification") or "Not analyzed",
                         } for x in reversed(profile_sessions)]),hide_index=True,use_container_width=True)
@@ -754,7 +1136,6 @@ elif st.session_state.page == "builder":
 
 
 
-    col1, col2, col3 = st.columns([1, 2, 1])
 
 
 

@@ -20,6 +20,8 @@ import { Button as BaselineButton } from "../baseline/ui";
 import { useCatalog } from "../baseline/store";
 
 import { useCameraPreference } from "../preferences/camera";
+import { signOut } from "firebase/auth";
+import { auth } from "../firebase/config";
 
 export default function SettingsScreen() {
   const wearable = useWearable();
@@ -395,6 +397,44 @@ export default function SettingsScreen() {
               size={23}
               color="#4A8BC3"
             />
+
+          </View>
+        </Pressable>
+
+
+        {/* =======================================
+            ACCOUNT
+        ======================================= */}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void signOut(auth)}
+          style={({ pressed }) => [
+            styles.card,
+            pressed && styles.cardPressed,
+          ]}
+        >
+          <View style={styles.row}>
+
+            <View style={styles.iconCircle}>
+              <Ionicons
+                name="log-out-outline"
+                size={25}
+                color="#367FBD"
+              />
+            </View>
+
+            <View style={styles.rowText}>
+
+              <Text style={styles.cardTitle}>
+                Sign Out
+              </Text>
+
+              <Text style={styles.description}>
+                {auth.currentUser?.email ?? "Signed in"}
+              </Text>
+
+            </View>
 
           </View>
         </Pressable>

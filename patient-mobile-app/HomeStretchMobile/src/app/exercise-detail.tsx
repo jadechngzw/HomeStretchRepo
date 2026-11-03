@@ -37,6 +37,7 @@ import type { PatientProfile } from "../sync/schema";
 import { syncSessions } from "../sync/upload";
 import { getCatalog, saveSession } from "../baseline/store";
 import { uid } from "../baseline/types";
+import { useSessionSync } from "../firebase/useSessionSync";
 
 /* =====================================================
    EXERCISE INFORMATION
@@ -124,12 +125,6 @@ function LegacyExerciseDetailScreen() {
     return () => { setFocused(false); session.interrupt("Set interrupted. Start a new set when you return."); };
   }, [session.interrupt]));
 
-  useEffect(() => {
-    if (session.phase !== "ended" || !session.endedAt || !preSurvey || ownedSession.current !== session.sessionId || savedSession.current === session.sessionId) return;
-    savedSession.current = session.sessionId;
-    const document=makeSession({id:uid(),patient:patientAtStart.current,exercise:{id:id||"bicep-curls",name:exercise.name},startedAt:session.startedAt!,endedAt:session.endedAt,protocolSessionId:session.sessionId,survey:preSurvey,durations:session.repDurations,complete:session.complete===true});
-    void saveSession(document).then(()=>syncSessions()).catch(()=>setSaveError("The session could not be saved. Check device storage and Settings."));
-  }, [session.phase, session.endedAt, session.sessionId, preSurvey, id]);
 
   const [permission, requestPermission] =
     useCameraPermissions();
@@ -139,6 +134,22 @@ function LegacyExerciseDetailScreen() {
 
   const [manualStarted, setExerciseStarted] = useState(false);
   const exerciseStarted = isCurl ? session.running : manualStarted;
+  // Live Firestore record for the clinician dashboard.
+  useSessionSync({
+    exercise: id || "bicep-curls",
+    exerciseName: exercise.name,
+    arm: isCurl ? (session.arm ?? arm) : null,
+    targetReps: exercise.reps,
+    targetSets: exercise.sets,
+    running: exerciseStarted,
+    reps,
+    repDurations: isCurl ? session.repDurations : [],
+    atypicalFlags: guidance.atypicalFlags,
+    endStatus: () =>
+      isCurl
+        ? session.phase === "interrupted" ? "interrupted" : "completed"
+        : manualReps > 0 ? "completed" : "interrupted",
+  });
   const transitioning = isCurl && ["starting", "stopping"].includes(session.phase);
   const startDisabled = transitioning || (!exerciseStarted && !preSurvey) || (isCurl && !session.running && (!arm || watchStatus !== "connected"));
 
