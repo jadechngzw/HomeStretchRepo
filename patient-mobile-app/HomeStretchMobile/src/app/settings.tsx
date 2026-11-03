@@ -1,3 +1,5 @@
+import SyncSettings from "../sync/SyncSettings";
+import { activeBaselines, isActive } from '../baseline/activation';
 import React, { useCallback, useState } from "react";
 import {
   View,
@@ -14,10 +16,14 @@ import { StatusBar } from "expo-status-bar";
 
 import { useWearable } from "../wearable/useWearable";
 
+import { Button as BaselineButton } from "../baseline/ui";
+import { useCatalog } from "../baseline/store";
+
 import { useCameraPreference } from "../preferences/camera";
 
 export default function SettingsScreen() {
   const wearable = useWearable();
+  const catalog = useCatalog();
   const watchStatus = wearable.phase;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useCameraPreference();
@@ -164,6 +170,15 @@ export default function SettingsScreen() {
 
         </View>
 
+
+        <SyncSettings />
+        <Text style={styles.sectionTitle}>Exercise Baselines</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Manage baselines</Text>
+          <Text style={styles.description}>{catalog.data.baselines.filter(b => isActive(catalog.data, b)).length} active baselines · saved on this device</Text>
+          <BaselineButton title="Manage baselines" secondary onPress={() => router.push("/baselines")} />
+          <BaselineButton title="Set up a baseline" onPress={() => router.push("/baseline-setup")} />
+        </View>
 
         {/* =======================================
             CAMERA

@@ -11,6 +11,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 import datetime
+from session_schema import normalize_session, patient_key
 
 
 
@@ -82,7 +83,7 @@ def load_all_firestore_sessions():
     """Read recording metadata and (when present) processed exercise fields."""
     sessions = []
     for snapshot in db.collection(FIRESTORE_COLLECTION).stream():
-        data = snapshot.to_dict() or {}
+        data = normalize_session(snapshot.to_dict() or {})
         data["id"] = snapshot.id
         data["session_time"] = (data.get("started_at") or data.get("startedAt")
                                 or data.get("timestamp") or snapshot.create_time)
@@ -133,22 +134,22 @@ def get_all_sessions(patient_id=None, patient_name=None):
     if patient_id is None and patient_name is None:
         return sessions
     if patient_id == FIRESTORE_DEMO_ID:
-        return [s for s in sessions if not firestore_patient_name(s)]
+        return [s for s in sessions if not patient_key(s)]
     if isinstance(patient_id, str) and patient_id.startswith(FIRESTORE_NAMED_PREFIX):
         key = patient_id[len(FIRESTORE_NAMED_PREFIX):]
     else:
-        key = normalized_patient_name(patient_name)
+        key = patient_key({"patient_name": patient_name})
     return [s for s in sessions
-            if normalized_patient_name(firestore_patient_name(s)) == key]
+            if patient_key(s) == key]
 
 
 def get_named_firestore_patients():
     names = {}
     for session in load_all_firestore_sessions():
         name = firestore_patient_name(session)
-        key = normalized_patient_name(name)
+        key = patient_key(session)
         if key:
-            names.setdefault(key, name)
+            names.setdefault(key, f"{name} ({session['patient_id']})" if session.get("patient_id") else name)
     return sorted(names.items(), key=lambda item: item[1].casefold())
 
 
@@ -270,7 +271,7 @@ def render_session_metrics(session):
         else:
             st.warning(f"Movement Quality: {classification}")
     else:
-        st.info("Movement classification is not included in this Firestore document.")
+        st.caption("See repetition results below." if session.get("rep_assessments") else "Movement classification is not included in this Firestore document.")
 
     pain = session.get(SESSION_PAIN_FIELD)
     if pain is not None:
@@ -293,6 +294,24 @@ def render_session_metrics(session):
         st.write("Atypical Rep IDs:", atypical_ids if atypical_ids else "None reported")
     else:
         st.caption("Typical/atypical repetition results have not been stored in this document.")
+
+    if session.get("pre_exercise_pain") is not None:
+        st.metric("Pain before exercise", f"{session['pre_exercise_pain']}/10")
+    after = (session.get("pain") or {}).get("after")
+    if isinstance(after, dict):
+        st.metric("Pain after exercise", f"{after.get('pain')}/10")
+    rows = session.get("rep_assessments") or []
+    if rows:
+        st.dataframe(pd.DataFrame([{
+            "Rep": r.get("rep"), "Duration (seconds)": r.get("duration_sec"),
+            "Result": r.get("classification", "unassessed"),
+            "Features outside baseline": ", ".join(r.get("features_outside_baseline") or []),
+        } for r in rows]), hide_index=True, use_container_width=True)
+    baseline = session.get("baseline")
+    if isinstance(baseline, dict):
+        st.caption(f"Reference baseline: {baseline.get('id')} · analysis {baseline.get('version')}")
+    if session.get("source") == "homestretch-mobile" and session.get("raw_file"):
+        st.caption("Raw sensor file is stored on the phone; this document contains the session summary.")
 
     section_heading("Sensor Recording Quality")
     sensors = session.get("sensors") or {}

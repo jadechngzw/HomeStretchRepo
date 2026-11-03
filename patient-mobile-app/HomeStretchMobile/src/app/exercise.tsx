@@ -1,3 +1,4 @@
+import { activeBaselines, isActive } from '../baseline/activation';
 import React from "react";
 import SettingsButton from "../components/SettingsButton";
 import {
@@ -11,69 +12,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
-export type Exercise = {
-  id: string;
-  name: string;
-  category?: string;
-  instructions: string;
-  sets?: number;
-  reps?: number;
-  duration: string;
-};
-
-const exercises: Exercise[] = [
-  {
-    id: "shoulder-rolls",
-    name: "Shoulder Rolls",
-    category: "warm up",
-    instructions: "Both directions x10",
-    reps: 10,
-    duration: "~ 1 min",
-  },
-  {
-    id: "knee-extensions",
-    name: "Gentle Knee Extensions",
-    category: "warm up",
-    instructions: "2 sets | 10 reps",
-    sets: 2,
-    reps: 10,
-    duration: "~ 3 min",
-  },
-  {
-    id: "sit-to-stand",
-    name: "Sit to Stand",
-    instructions: "2 sets | 10 reps",
-    sets: 2,
-    reps: 10,
-    duration: "~ 3 min",
-  },
-  {
-    id: "bicep-curls",
-    name: "Bicep Curls",
-    instructions: "2 sets | 10 reps",
-    sets: 2,
-    reps: 10,
-    duration: "~ 3 min",
-  },
-  {
-    id: "seated-arm-raises",
-    name: "Seated Arm Raises",
-    instructions: "2 sets | 10 reps",
-    sets: 2,
-    reps: 10,
-    duration: "~ 3 min",
-  },
-  {
-    id: "weight-shifts",
-    name: "Weight Shifts",
-    instructions: "2 sets | 10 reps",
-    sets: 2,
-    reps: 10,
-    duration: "~ 2 min",
-  },
-];
+import { exercises as getExercises, useCatalog } from "../baseline/store";
+import { Badge, Button, Hint } from "../baseline/ui";
 
 export default function ExerciseScreen() {
+  const catalog = useCatalog();
+  const exercises = getExercises(catalog.data);
   return (
     <View style={styles.screen}>
 
@@ -90,6 +34,9 @@ export default function ExerciseScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        <Button title="+ Add exercise / Set up baseline" secondary disabled={!catalog.ready || !!catalog.error} onPress={() => router.push("/baseline-setup")} />
+        <View style={{ height: 12 }} />
+        {catalog.error && <Hint error>{catalog.error}</Hint>}
         {exercises.map((exercise) => (
           <Pressable
             key={exercise.id}
@@ -123,6 +70,8 @@ export default function ExerciseScreen() {
             <Text style={styles.duration}>
               {exercise.duration}
             </Text>
+
+            <Badge active={activeBaselines(catalog.data, exercise.id).length > 0} pending={catalog.data.baselines.some(b => b.exerciseId === exercise.id && b.status === "awaiting-review")} />
 
             <View style={styles.arrowCircle}>
               <Ionicons

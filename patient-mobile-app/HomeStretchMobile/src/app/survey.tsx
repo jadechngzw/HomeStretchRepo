@@ -14,7 +14,10 @@ import {
 import Slider from "@react-native-community/slider";
 
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import { attachPostSurvey, saveSurvey } from "../baseline/store";
+import { syncSessions } from "../sync/upload";
+import { Hint } from "../baseline/ui";
 
 const symptomOptions = [
   "Getting Better",
@@ -371,6 +374,11 @@ const painRegions: PainRegion[] = [
 ];
 
 export default function SurveyScreen() {
+  const params = useLocalSearchParams<{ phase?: string; exerciseId?: string; returnTo?: string; sessionId?: string }>();
+  const before = params.phase === "before";
+  const [painAnswered, setPainAnswered] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [symptoms, setSymptoms] = useState("Select One");
 
   const [symptomModalVisible, setSymptomModalVisible] =
@@ -393,15 +401,22 @@ export default function SurveyScreen() {
     });
   };
 
-  const submitSurvey = () => {
-    console.log({
-      symptoms,
-      painLevel,
-      selectedPainRegions,
-      notes,
-    });
-
-    router.replace("/exercise");
+  const submitSurvey = async () => {
+    if (!painAnswered || saving) return;
+    setSaving(true); setSaveError("");
+    try {
+      const surveyId = await saveSurvey({ phase: before ? "before" : "after", exerciseId: params.exerciseId ?? null,
+        pain: painLevel, symptoms: symptoms === "Select One" ? "" : symptoms, regions: selectedPainRegions, notes });
+      if (before && params.returnTo === "baseline") {
+        router.dismissTo({ pathname: "/baseline-setup", params: { exerciseId: params.exerciseId, surveyId } });
+      } else if (before && params.exerciseId) {
+        router.dismissTo({ pathname: "/exercise-detail", params: { id: params.exerciseId, surveyId } });
+      } else {
+        if (!before && params.sessionId) { await attachPostSurvey(params.sessionId,surveyId); void syncSessions().catch(()=>{}); }
+        router.replace("/exercise");
+      }
+    } catch (e) { setSaveError(e instanceof Error ? e.message : "Could not save the survey. Please try again."); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -426,7 +441,7 @@ export default function SurveyScreen() {
           </Pressable>
           <SettingsButton />
           <Text style={styles.headerTitle}>
-            Post-Exercise Survey
+            {before ? "Pre-Exercise Survey" : "Post-Exercise Survey"}
           </Text>
 
         </View>
@@ -440,6 +455,8 @@ export default function SurveyScreen() {
           contentContainerStyle={styles.scrollContent}
         >
 
+          {saveError ? <Hint error>{saveError}</Hint> : null}
+          <Text style={styles.helperText}>Saved on this device. Select your pain rating before continuing.</Text>
           {/* ======================================= */}
           {/* SYMPTOMS */}
           {/* ======================================= */}
@@ -656,7 +673,9 @@ export default function SurveyScreen() {
               maximumValue={10}
               step={1}
               value={painLevel}
-              onValueChange={setPainLevel}
+              accessibilityLabel="Overall pain, from zero to ten"
+              accessibilityValue={{ min: 0, max: 10, now: painLevel, text: painAnswered ? `${painLevel} out of 10` : "Not answered" }}
+              onValueChange={(value) => { setPainLevel(value); setPainAnswered(true); }}
               minimumTrackTintColor="#76A9D2"
               maximumTrackTintColor="#D5E7F3"
               thumbTintColor="#76A9D2"
@@ -669,7 +688,7 @@ export default function SurveyScreen() {
               </Text>
 
               <Text style={styles.sliderCurrent}>
-                {painLevel}
+                {painAnswered ? painLevel : "Not answered"}
               </Text>
 
               <Text style={styles.sliderNumber}>
@@ -680,6 +699,9 @@ export default function SurveyScreen() {
 
           </View>
 
+          <Pressable accessibilityRole="button" onPress={() => setPainAnswered(true)} style={[styles.submitButton, { backgroundColor: "#EEF4F8" }]}>
+            <Text style={[styles.submitText, { color: "#367FBD" }]}>{painAnswered ? `Pain rating: ${painLevel} / 10 ✓` : `Confirm pain rating: ${painLevel} / 10`}</Text>
+          </Pressable>
           {/* ======================================= */}
           {/* NOTES */}
           {/* ======================================= */}
@@ -690,7 +712,7 @@ export default function SurveyScreen() {
 
           <TextInput
             style={styles.notesInput}
-            placeholder="Tell us how you felt during the exercises..."
+            placeholder={before ? "Tell us how you feel before exercising…" : "Tell us how you felt during the exercises…"}
             placeholderTextColor="#7A7A7A"
             value={notes}
             onChangeText={setNotes}
@@ -705,12 +727,16 @@ export default function SurveyScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.submitButton,
+              (!painAnswered || saving) && { opacity: 0.45 },
               pressed && styles.submitPressed,
             ]}
-            onPress={submitSurvey}
+            disabled={!painAnswered || saving}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !painAnswered || saving, busy: saving }}
+            onPress={() => void submitSurvey()}
           >
             <Text style={styles.submitText}>
-              Submit Survey
+              {saving ? "Saving…" : before ? "Save and Continue" : "Submit Survey"}
             </Text>
 
             <Ionicons
