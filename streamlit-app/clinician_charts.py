@@ -104,3 +104,27 @@ def metric_by_rep_frame(recordings,key):
             if finite(value) and finite(row.get('rep')):
                 rows.append({'session':recording.get('id'),'time':when,'rep':int(row['rep']),'value':value,'classification':row.get('classification')})
     return rows
+
+PAIN_PHASES=(('before','Before exercise'),('after','After exercise'))
+
+def pain_answers(recording,daily=None):
+    """{phase: (answer, source)}: dailySurveys doc first, else the copy embedded in the session. Values unchanged."""
+    embedded=recording.get('pain') if isinstance(recording.get('pain'),dict) else {}
+    result={}
+    for phase,_ in PAIN_PHASES:
+        if isinstance((daily or {}).get(phase),dict): result[phase]=(daily[phase],'dailySurveys')
+        elif isinstance(embedded.get(phase),dict): result[phase]=(embedded[phase],'session record')
+    return result
+
+def pain_frame(recordings,daily_by_date):
+    """One row per local_date and phase with the stored 0-10 pain value; dates without a value are skipped."""
+    rows,seen=[],set()
+    for recording in recordings:
+        date=recording.get('local_date')
+        if not date or date in seen: continue
+        seen.add(date)
+        for phase,label in PAIN_PHASES:
+            answer=pain_answers(recording,daily_by_date.get(date)).get(phase)
+            if answer and finite(answer[0].get('pain')):
+                rows.append({'date':date,'phase':label,'pain':answer[0]['pain'],'source':answer[1]})
+    return rows

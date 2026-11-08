@@ -12,7 +12,8 @@ import altair as alt
 import streamlit as st
 import clinician_backend as backend
 from clinician_charts import (METRICS, metric_frame, exercise_of, is_bicep_curl, recording_time,
-                              session_trend_frame, rep_duration_frame, metric_trend_frame, metric_by_rep_frame)
+                              session_trend_frame, rep_duration_frame, metric_trend_frame, metric_by_rep_frame,
+                              pain_answers, pain_frame, PAIN_PHASES)
 
 st.set_page_config(page_title='HomeStretch | Clinician', page_icon='🏠', layout='wide')
 st.markdown("""<style>
@@ -182,6 +183,30 @@ st.session_state['_sessions_this_run'] = {}
 
 
 # ---------------------------------------------------------------- charts
+def surveys_for(patient_id, local_date):
+    if not local_date: return {}
+    cache = st.session_state.setdefault('_surveys_this_run', {})
+    if (patient_id, local_date) not in cache:
+        cache[(patient_id, local_date)] = backend.surveys(token, patient_id, local_date)
+    return cache[(patient_id, local_date)]
+
+
+def pain_chart(recordings, patient_id):
+    dates = {r.get('local_date') for r in recordings if r.get('local_date')}
+    rows = pain_frame(recordings, {d: surveys_for(patient_id, d) for d in dates})
+    if not rows: return None
+    frame = pd.DataFrame(rows)
+    return alt.Chart(frame).mark_line(point=alt.OverlayMarkDef(size=80, filled=True)).encode(
+        x=alt.X('date:O', title='Date', sort='ascending', axis=alt.Axis(labelAngle=0)),
+        y=alt.Y('pain:Q', title='Pain (0–10)', scale=alt.Scale(domain=[0, 10]), axis=alt.Axis(tickMinStep=1)),
+        color=alt.Color('phase:N', scale=alt.Scale(domain=['Before exercise', 'After exercise'], range=['#367FBD', '#C24C54']), legend=alt.Legend(title=None, orient='top')),
+        xOffset=alt.XOffset('phase:N'),
+        tooltip=[alt.Tooltip('date:O', title='Date'), alt.Tooltip('phase:N', title='Survey'), alt.Tooltip('pain:Q', title='Pain'), alt.Tooltip('source:N', title='Source')],
+    ).properties(height=260)
+
+
+st.session_state['_surveys_this_run'] = {}
+
 def x_labels(rows):
     """Ordered per-set labels so several sets on one day stay separate bars."""
     frame = pd.DataFrame(rows)
@@ -385,6 +410,23 @@ def recording_detail(patient_id, recording):
     d.metric('Unassessed', recording.get('num_unassessed', '—'))
     if recording.get('status') == 'interrupted' or recording.get('complete') is False:
         st.warning('This recording was interrupted. Results may be incomplete.')
+    daily = surveys_for(patient_id, recording.get('local_date'))
+    answers = pain_answers(recording, daily)
+    with card():
+        section('Pain survey')
+        cols = st.columns(2)
+        for col, (phase, title) in zip(cols, PAIN_PHASES):
+            with col:
+                answer = answers.get(phase)
+                if not answer:
+                    st.metric(title, '—'); st.caption('Survey not received'); continue
+                data, source = answer
+                pain = data.get('pain')
+                st.metric(title, f'{pain} / 10' if pain is not None else '—')
+                details = [str(data[f]) for f in ('symptoms', 'notes') if data.get(f)]
+                if data.get('regions'): details.append('Regions: ' + ', '.join(map(str, data['regions'])))
+                for line in details: st.caption(line)
+                st.caption(f'Source: {source} · {recording.get("local_date") or ""}')
     flags = [(r.get('rep'), [METRICS.get(f, f) for f in r.get('features_outside_baseline') or []])
              for r in recording.get('rep_assessments') or [] if r.get('features_outside_baseline')]
     left, right = st.columns([1.4, 1], gap='medium')
@@ -401,16 +443,6 @@ def recording_detail(patient_id, recording):
                 st.caption('Reps outside baseline')
                 for rep, features in flags: st.markdown(f"**Rep {rep}** · {html.escape(', '.join(features))}")
             else: st.caption('No reps were flagged outside baseline.')
-            if recording.get('local_date'):
-                daily = backend.surveys(token, patient_id, recording['local_date'])
-                for phase, title in [('before', 'Before exercise'), ('after', 'After exercise')]:
-                    answer = daily.get(phase)
-                    if answer:
-                        st.write(f"**{title}:** pain {answer.get('pain')} / 10")
-                        for field in ('symptoms', 'notes'):
-                            if answer.get(field): st.caption(str(answer[field]))
-                        if answer.get('regions'): st.caption(', '.join(answer['regions']))
-                    else: st.caption(f'{title}: survey not received')
     section('Movement metrics by repetition')
     st.caption('Shaded bands show the baseline saved with this set. Red points are outside that range, not a diagnosis.')
     columns, shown = st.columns(2), 0
@@ -455,6 +487,13 @@ def profile_page(link):
             chosen = st.selectbox('Exercise', ids, index=default, format_func=lambda e: exercises[e], key=f'exercise_{patient_id}')
             selected = [r for r in recordings if exercise_of(r)[0] == chosen]
             st.caption(f'{len(selected)} set(s) of {exercises[chosen]} · newest of the latest 100 uploads')
+            with card():
+                section('Pain before / after exercise')
+                chart = pain_chart(selected, patient_id)
+                if chart is not None:
+                    st.altair_chart(chart, width='stretch')
+                    st.caption('Pain scores exactly as the patient entered them in the daily before/after surveys (0 = no pain).')
+                else: st.caption('No pain surveys found for these sets yet.')
             left, right = st.columns(2, gap='medium')
             with left:
                 with card():
