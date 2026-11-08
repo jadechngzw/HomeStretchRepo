@@ -58,6 +58,34 @@ class UITests(unittest.TestCase):
         page=AppTest.from_file(str(Path(__file__).with_name('clinician_app.py'))).run()
         self.assertFalse(page.exception)
         self.assertEqual(page.subheader[0].value,'Clinician sign in')
+    def test_set_checkboxes_select_all_and_individual(self):
+        from streamlit.testing.v1 import AppTest
+        page=AppTest.from_file(str(Path(__file__).with_name('clinician_app.py')),default_timeout=30)
+        page.session_state.clinician_token='test-token'
+        def rec(i,t):
+            return {'id':f's{i}','exercise':{'id':'bicep-curls','name':'Bicep Curls'},'started_at':t,'local_date':'2026-11-07','num_reps':2,
+                    'rep_assessments':[{'rep':1,'assessable':True,'metrics':{'gyro_peak_deg_s':1.0+i}},{'rep':2,'assessable':True,'metrics':{'gyro_peak_deg_s':2.0+i}}]}
+        sessions=[rec(1,'2026-11-07T10:00:00Z'),rec(2,'2026-11-07T11:00:00Z')]
+        mocks=dict(clinician=('c',{}),linked_patients=[{'patient_id':'p','patient_name':'P'}],sessions=sessions,surveys={},invitations=[],messages=[])
+        patches=[patch.object(backend,n,return_value=v) for n,v in mocks.items()]
+        for item in patches: item.start()
+        try:
+            page.session_state.selected_patient='p';page.run()
+            boxes=lambda: {c.label:c.value for c in page.checkbox if str(c.key).startswith('trend_')}
+            self.assertFalse(page.exception)
+            self.assertEqual(len(boxes()),3);self.assertTrue(all(boxes().values()))
+            one=[c for c in page.checkbox if str(c.key).startswith('trend_') and c.label!='Select all'][0]
+            one.uncheck().run()
+            self.assertFalse(boxes()['Select all']);self.assertEqual(sum(boxes().values()),1)
+            page.checkbox(key=[c.key for c in page.checkbox if str(c.key).startswith('trend_') and c.label=='Select all'][0]).check().run()
+            self.assertTrue(all(boxes().values()))
+            page.checkbox(key=[c.key for c in page.checkbox if str(c.key).startswith('trend_') and c.label=='Select all'][0]).uncheck().run()
+            self.assertFalse(any(boxes().values()))
+            self.assertTrue(any('No sets selected' in c.value for c in page.caption))
+            self.assertFalse(page.exception)
+        finally:
+            for item in patches: item.stop()
+
     def test_connected_patient_chart_renders_without_database_access(self):
         from streamlit.testing.v1 import AppTest
         page=AppTest.from_file(str(Path(__file__).with_name('clinician_app.py')))

@@ -220,18 +220,56 @@ def duration_chart(recordings):
     return (rng + line).properties(height=280)
 
 
-def metric_trend_chart(recordings, key):
-    """Stored per-rep values, unchanged: x = rep number, one line per set."""
+def set_label_map(recordings):
+    """{session id: legend label} plus chronological label order, for every set that has per-rep metrics."""
+    rows = [dict(r, value=None) for k in METRICS for r in metric_by_rep_frame(recordings, k)]
+    if not rows: return {}, []
+    frame, order = x_labels(rows)
+    return dict(zip(frame['session'], frame['set'])), order
+
+
+def metric_trend_chart(recordings, key, shown=None):
+    """Stored per-rep values, unchanged: x = rep number, one line per set.
+
+    `shown` limits which set labels are plotted; colors stay fixed over all sets."""
     rows = metric_by_rep_frame(recordings, key)
     if not rows: return None
-    frame, order = x_labels(rows)
+    labels, order = set_label_map(recordings)
+    frame = pd.DataFrame(rows)
+    frame['set'] = frame['session'].map(labels)
+    if shown is not None: frame = frame[frame['set'].isin(shown)]
+    if frame.empty: return None
+    palette = ['#2C6FAD', '#8EC3F0', '#E0413A', '#F2A8A3', '#45A08A', '#9FD8C6', '#E3A33B', '#F4D27F', '#7A5CC2', '#C3B1EC']
+    colors = alt.Scale(domain=order, range=[palette[i % len(palette)] for i in range(len(order))])
     tooltip = [alt.Tooltip('set:N', title='Set'), alt.Tooltip('rep:O', title='Rep'), alt.Tooltip('value:Q', title=METRICS[key], format='.3f')]
     return alt.Chart(frame).mark_line(point=alt.OverlayMarkDef(size=55, filled=True)).encode(
         x=alt.X('rep:O', title='Repetition', axis=alt.Axis(labelAngle=0)),
         y=alt.Y('value:Q', title=METRICS[key], scale=alt.Scale(zero=False)),
-        color=alt.Color('set:N', sort=order, legend=alt.Legend(title='Set', orient='top')),
+        color=alt.Color('set:N', scale=colors, legend=alt.Legend(title='Set', orient='top', values=[o for o in order if shown is None or o in shown])),
         tooltip=tooltip,
     ).properties(height=300)
+
+
+def set_checkboxes(labels, prefix):
+    """'Select all' + one checkbox per set label (all checked by default). Returns the checked labels."""
+    keys = {label: f'{prefix}_set_{i}' for i, label in enumerate(labels)}
+    all_key = f'{prefix}_all'
+    for k in keys.values(): st.session_state.setdefault(k, True)
+
+    def toggle_all():
+        for k in keys.values(): st.session_state[k] = st.session_state[all_key]
+
+    def sync_all():
+        st.session_state[all_key] = all(st.session_state[k] for k in keys.values())
+
+    st.session_state[all_key] = all(st.session_state[k] for k in keys.values())
+    st.checkbox('Select all', key=all_key, on_change=toggle_all)
+    per_row = 5
+    for start in range(0, len(labels), per_row):
+        cols = st.columns(per_row)
+        for col, label in zip(cols, labels[start:start + per_row]):
+            col.checkbox(label, key=keys[label], on_change=sync_all)
+    return [label for label in labels if st.session_state[keys[label]]]
 
 
 def per_rep_chart(recording, key, title):
@@ -477,7 +515,11 @@ def profile_page(link):
                     st.caption('These sets have no per-rep movement metrics yet. Sets recorded with a saved baseline include them.')
                 else:
                     key = st.selectbox('Metric', keys, format_func=METRICS.get, key=f'metric_{patient_id}')
-                    st.altair_chart(metric_trend_chart(selected, key), width='stretch')
+                    _, set_order = set_label_map(selected)
+                    shown = set_checkboxes(set_order, f'trend_{patient_id}_{chosen}')
+                    chart = metric_trend_chart(selected, key, shown)
+                    if chart is not None: st.altair_chart(chart, width='stretch')
+                    else: st.caption('No sets selected. Tick at least one set above.')
                     st.caption('Each line is one set. Points are the per-rep values exactly as stored, in rep order (rep 1, rep 2, …).')
     with tab_sets:
         if not recordings:
