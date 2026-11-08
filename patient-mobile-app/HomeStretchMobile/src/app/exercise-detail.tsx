@@ -1,8 +1,15 @@
-import { useCurlSession } from "../wearable/useCurlSession";
+import { patientIdentity } from '../firebase/patientIdentity';
+import { useDailySurveys } from "../baseline/useDailySurveys";
+import { session as liveSession, useCurlSession } from "../wearable/useCurlSession";
 import type { Arm } from "../wearable/curlSession";
 import { useCameraPreference } from "../preferences/camera";
 import { useWearable } from "../wearable/useWearable";
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
+import LiveExercise from "../baseline/LiveExercise";
+import { activeBaselines } from "../baseline/activation";
+import { Page } from "../baseline/ui";
+import { exercises, useCatalog } from "../baseline/store";
+import { Button as BaselineButton, Hint } from "../baseline/ui";
 import SettingsButton from "../components/SettingsButton";
 import {
   View,
@@ -27,8 +34,11 @@ import {
 
 import { StatusBar } from "expo-status-bar";
 import { useLiveGuidance } from "../wearable/useLiveGuidance";
-import { db } from "../firebase/config";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { makeSession } from "../sync/schema";
+import type { PatientProfile } from "../sync/schema";
+import { syncSessions } from "../sync/upload";
+import { getCatalog, saveSession } from "../baseline/store";
+import { uid } from "../baseline/types";
 
 /* =====================================================
    EXERCISE INFORMATION
@@ -90,13 +100,18 @@ const exerciseInfo: Record<
    EXERCISE DETAIL SCREEN
 ===================================================== */
 
-export default function ExerciseDetailScreen() {
-  const { id } = useLocalSearchParams<{
-    id: string;
-  }>();
+function LegacyExerciseDetailScreen() {
+  const { id, surveyId } = useLocalSearchParams<{ id: string; surveyId?: string }>();
+  const catalog = useCatalog();
+  const preSurvey = useDailySurveys().before;
+  const [saveError, setSaveError] = useState("");
+  const patientAtStart = useRef<PatientProfile|null>(null);
+  const surveyAtStart = useRef(preSurvey);
+  const ownedSession = useRef<number | null>(null);
+  const savedSession = useRef<number | null>(null);
 
   const exercise =
-    exerciseInfo[id || "bicep-curls"] ??
+    exercises(catalog.data).find(e => e.id === id) ?? exerciseInfo[id || "bicep-curls"] ??
     exerciseInfo["bicep-curls"];
 
   const isCurl = (id || "bicep-curls") === "bicep-curls";
@@ -104,27 +119,34 @@ export default function ExerciseDetailScreen() {
   const guidance = useLiveGuidance();
   const [arm, setArm] = useState<Arm | null>(null);
   const [manualReps, setReps] = useState(0);
+  const manualCount = useRef(0);
+  manualCount.current = manualReps;
+  const manualRecording = useRef<{id:string;startedAt:number;patient:PatientProfile;survey:NonNullable<typeof preSurvey>} | null>(null);
+  const saveManual = (complete:boolean) => {
+    const record=manualRecording.current;
+    if(!record)return;
+    manualRecording.current=null;
+    const document=makeSession({id:record.id,patient:record.patient,exercise:{id:id||'bicep-curls',name:exercise.name},startedAt:record.startedAt,endedAt:Date.now(),protocolSessionId:0,survey:record.survey,manualReps:manualCount.current,complete});
+    void saveSession(document).then(()=>syncSessions()).catch(()=>setSaveError('Could not save the set. Please check device storage.'));
+  };
+  const finishManual = useRef(saveManual);
+  finishManual.current=saveManual;
+  useEffect(()=>()=>finishManual.current(false),[]);
+
   const reps = isCurl ? session.reps : manualReps;
   const [cameraEnabled] = useCameraPreference();
   const [focused, setFocused] = useState(false);
   useFocusEffect(useCallback(() => {
     setFocused(true);
-    return () => { setFocused(false); session.interrupt("Set interrupted. Start a new set when you return."); };
+    return () => { setFocused(false); finishManual.current(false); setExerciseStarted(false); session.interrupt("Set interrupted. Start a new set when you return."); };
   }, [session.interrupt]));
 
   useEffect(() => {
-    if (guidance.state !== "IDLE_POST" || !session.endedAt) return;
-    void addDoc(collection(db, "sessions"), {
-      exercise: id,
-      arm: session.arm,
-      num_reps: session.reps,
-      rep_durations: session.repDurations,
-      duration_sec: session.endedAt && session.startedAt
-        ? Math.round((session.endedAt - session.startedAt) / 1000) : 0,
-      atypical_flags: guidance.atypicalFlags,
-      timestamp: serverTimestamp(),
-    });
-  }, [guidance.state]);
+    if (session.phase !== "ended" || !session.endedAt || !surveyAtStart.current || ownedSession.current !== session.sessionId || savedSession.current === session.sessionId) return;
+    savedSession.current = session.sessionId;
+    const document=makeSession({id:uid(),patient:patientAtStart.current,exercise:{id:id||"bicep-curls",name:exercise.name},startedAt:session.startedAt!,endedAt:session.endedAt,protocolSessionId:session.sessionId,survey:surveyAtStart.current,durations:session.repDurations,complete:session.complete===true});
+    void saveSession(document).then(()=>syncSessions()).catch(()=>setSaveError("The session could not be saved. Check device storage and Settings."));
+  }, [session.phase, session.endedAt, session.sessionId, preSurvey, id]);
 
   const [permission, requestPermission] =
     useCameraPermissions();
@@ -135,7 +157,7 @@ export default function ExerciseDetailScreen() {
   const [manualStarted, setExerciseStarted] = useState(false);
   const exerciseStarted = isCurl ? session.running : manualStarted;
   const transitioning = isCurl && ["starting", "stopping"].includes(session.phase);
-  const startDisabled = transitioning || (isCurl && !session.running && (!arm || watchStatus !== "connected"));
+  const startDisabled = transitioning || (!exerciseStarted && !preSurvey) || (isCurl && !session.running && (!arm || watchStatus !== "connected"));
 
 
   /* ===================================================
@@ -162,8 +184,13 @@ export default function ExerciseDetailScreen() {
   const toggleExercise = () => {
     if (isCurl) {
       if (session.running) void session.stop();
-      else if (arm) void session.start(arm);
-    } else setExerciseStarted((current) => !current);
+      else if (arm && preSurvey) {
+        surveyAtStart.current = preSurvey;
+        patientAtStart.current = patientIdentity();
+        void session.start(arm).then(() => { ownedSession.current = liveSession.getSnapshot().sessionId; });
+      }
+    } else if (exerciseStarted) { saveManual(true); setExerciseStarted(false); }
+    else if(preSurvey) {manualRecording.current={id:uid(),startedAt:Date.now(),patient:patientIdentity(),survey:{...preSurvey}};setReps(0);setExerciseStarted(true);}
   };
 
 
@@ -172,6 +199,7 @@ export default function ExerciseDetailScreen() {
   =================================================== */
 
   const completeExercise = () => {
+    if (!isCurl) saveManual(true);
     router.replace("/exercise");
   };
 
@@ -247,6 +275,14 @@ export default function ExerciseDetailScreen() {
         </View>
 
 
+
+        {saveError ? <Hint error>{saveError}</Hint> : null}
+        <View style={styles.armCard}>
+          <Text style={styles.armTitle}>Before you exercise</Text>
+          <Text style={styles.sessionHint}>{preSurvey ? `Pain before exercise: ${preSurvey.pain} / 10` : "Complete your pre-exercise survey before starting."}</Text>
+          {!preSurvey && <BaselineButton title="Pre-exercise survey" secondary disabled={exerciseStarted} onPress={() => router.push({ pathname: "/survey", params: { phase: "before", exerciseId: id || "bicep-curls", returnTo: "exercise" } })} />}
+          <BaselineButton title="Set up a baseline" secondary disabled={exerciseStarted} onPress={() => router.push({ pathname: "/baseline-setup", params: { exerciseId: id || "bicep-curls" } })} />
+        </View>
 
         {isCurl && (
           <View style={styles.armCard}>
@@ -989,3 +1025,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 });
+export default function ExerciseDetailScreen() {
+  const { id = "bicep-curls", surveyId, baselineId } = useLocalSearchParams<{id?: string; surveyId?: string; baselineId?: string}>();
+  const catalog = useCatalog();
+  const daily = useDailySurveys();
+  if (!catalog.ready) return <Page title="Exercise"><Text>Loading your baseline…</Text></Page>;
+  const exercise = exercises(catalog.data).find(e => e.id === id);
+  const baselines = activeBaselines(catalog.data, id);
+  if (exercise && baselines.length) return <LiveExercise key={id} exercise={exercise} baselines={baselines} preferredBaselineId={baselineId} preSurvey={daily.before} />;
+  return <LegacyExerciseDetailScreen />;
+}

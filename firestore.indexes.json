@@ -1,0 +1,12 @@
+{
+  "indexes": [
+    {"collectionGroup":"sessions","queryScope":"COLLECTION","fields":[
+      {"fieldPath":"patient_id","order":"ASCENDING"},
+      {"fieldPath":"ended_at","order":"DESCENDING"}
+    ]}
+  ],
+  "fieldOverrides": [
+    {"collectionGroup":"sessions","fieldPath":"rep_assessments","indexes":[]},
+    {"collectionGroup":"sessions","fieldPath":"baseline","indexes":[]}
+  ]
+}

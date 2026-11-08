@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(id) { return signedIn() && request.auth.uid == id; }
+    function activeMember(linkId) {
+      let link = get(/databases/$(database)/documents/careLinks/$(linkId)).data;
+      return signedIn() && link.status == 'active' &&
+        (link.patient_id == request.auth.uid || link.clinician_id == request.auth.uid);
+    }
+    match /users/{uid} {
+      allow read: if owner(uid);
+      // Clinician roles are provisioned by the trusted server only.
+      allow create, update, delete: if false;
+    }
+    match /patients/{uid} {
+      allow read: if owner(uid);
+      function validProfile() {
+        return request.resource.data.full_name is string
+          && request.resource.data.full_name.size() >= 2
+          && request.resource.data.full_name.size() <= 100
+          && request.resource.data.date_of_birth is string
+          && request.resource.data.date_of_birth.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && request.resource.data.updated_at == request.time;
+      }
+      allow create: if owner(uid) && validProfile()
+        && request.resource.data.keys().hasOnly(['full_name','date_of_birth','updated_at']);
+      allow update: if owner(uid) && validProfile()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['full_name','date_of_birth','updated_at']);
+      allow delete: if false;
+    }
+    match /sessions/{sessionId} {
+      allow read: if signedIn() && resource.data.patient_id == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.patient_id == request.auth.uid
+        && request.resource.data.patient.id == request.auth.uid
+        && request.resource.data.session_id == sessionId
+        && request.resource.data.schema_version == 3
+        && request.resource.data.status in ['completed', 'interrupted']
+        && request.resource.data.started_at is timestamp
+        && request.resource.data.ended_at is timestamp
+        && request.resource.data.ended_at >= request.resource.data.started_at
+        && request.resource.data.rep_assessments is list
+        && request.resource.data.rep_assessments.size() <= 500
+        && request.resource.data.num_reps == request.resource.data.rep_assessments.size();
+      // Results are final; only the daily post-survey fields may be added later.
+      allow update: if signedIn() && resource.data.patient_id == request.auth.uid
+        && request.resource.data.patient_id == resource.data.patient_id
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pain', 'pain_level']);
+      allow delete: if false;
+    }
+    match /dailySurveys/{surveyId} {
+      allow read: if signedIn() && resource.data.patient_id == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.patient_id == request.auth.uid
+        && request.resource.data.patientId == request.auth.uid
+        && request.resource.data.phase in ['before', 'after']
+        && surveyId == request.auth.uid + '_' + request.resource.data.local_date + '_' + request.resource.data.phase
+        && request.resource.data.pain is int
+        && request.resource.data.pain >= 0 && request.resource.data.pain <= 10
+        && request.resource.data.recorded_at is timestamp;
+      allow update: if signedIn() && resource.data.patient_id == request.auth.uid
+        && request.resource.data == resource.data;
+      allow delete: if false;
+    }
+    match /careInvites/{inviteId} {
+      allow read: if signedIn() && (resource.data.patient_id == request.auth.uid || resource.data.clinician_id == request.auth.uid);
+      allow create, delete: if false;
+      allow update: if owner(resource.data.patient_id)
+        && resource.data.status == 'pending'
+        && resource.data.expires_at > request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','responded_at'])
+        && request.resource.data.responded_at == request.time
+        && (request.resource.data.status == 'declined' ||
+          (request.resource.data.status == 'accepted' && request.auth.token.email_verified == true));
+    }
+    match /careLinks/{linkId} {
+      allow read: if signedIn() && (resource.data.patient_id == request.auth.uid || resource.data.clinician_id == request.auth.uid);
+      function acceptedInvitation() {
+        let invite = getAfter(/databases/$(database)/documents/careInvites/$(request.resource.data.invite_id)).data;
+        return owner(invite.patient_id) && request.auth.token.email_verified == true
+          && invite.status == 'accepted' && invite.expires_at > request.time
+          && invite.link_id == linkId
+          && request.resource.data.keys().hasOnly(['patient_id','patient_name','clinician_id','clinician_name','invite_id','status','created_at'])
+          && request.resource.data.patient_id == invite.patient_id
+          && request.resource.data.clinician_id == invite.clinician_id
+          && request.resource.data.clinician_name == invite.clinician_name
+          && request.resource.data.patient_name == invite.patient_name
+          && request.resource.data.status == 'active'
+          && request.resource.data.created_at == request.time
+          && get(/databases/$(database)/documents/careInvites/$(request.resource.data.invite_id)).data.status == 'pending';
+      }
+      allow create: if signedIn() && acceptedInvitation();
+      allow update: if signedIn() && (
+        (resource.data.status == 'revoked' && acceptedInvitation()) ||
+        (owner(resource.data.patient_id) && request.resource.data.status == 'revoked'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])));
+      allow delete: if false;
+    }
+    match /conversations/{linkId}/messages/{messageId} {
+      allow read: if activeMember(linkId);
+      allow create: if activeMember(linkId)
+        && request.resource.data.keys().hasOnly(['sender_id','text','created_at'])
+        && request.resource.data.sender_id == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+        && request.resource.data.created_at == request.time;
+      allow update, delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

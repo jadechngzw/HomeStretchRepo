@@ -1,518 +1,66 @@
-import React, { useState } from "react";
-import SettingsButton from "../components/SettingsButton";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-} from "react-native";
+import React, {useEffect, useState} from 'react';
+import {Text, TextInput, View, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator} from 'react-native';
+import {Ionicons} from '@expo/vector-icons';
+import {router} from 'expo-router';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {collection, doc, onSnapshot, query, where, writeBatch, serverTimestamp, setDoc, orderBy, limit} from 'firebase/firestore';
+import {sendEmailVerification} from 'firebase/auth';
+import {auth, db} from '../firebase/config';
+import {Button} from '../baseline/ui';
 
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-
-type Provider = {
-  id: string;
-  name: string;
-  subtitle: string;
-};
-
-type Message = {
-  id: number;
-  sender: "patient" | "provider";
-  text: string;
-};
-
-const providers: Provider[] = [
-  {
-    id: "cindy",
-    name: "Dr. Cindy Sullivan",
-    subtitle: "Your Primary Provider",
-  },
-  {
-    id: "john",
-    name: "Dr. John Doe, PT",
-    subtitle: "Your Primary PT",
-  },
-];
-
+type Row = {id:string; [key:string]:any};
 export default function MessagesScreen() {
-  const [selectedProvider, setSelectedProvider] =
-    useState<Provider | null>(null);
-
-  const [messageText, setMessageText] = useState("");
-
-  const [messages, setMessages] = useState<Record<string, Message[]>>({
-    cindy: [],
-    john: [],
-  });
-
-  const sendMessage = () => {
-    const text = messageText.trim();
-
-    if (!text || !selectedProvider) {
-      return;
-    }
-
-    const newMessage: Message = {
-      id: Date.now(),
-      sender: "patient",
-      text: text,
-    };
-
-    setMessages((previous) => ({
-      ...previous,
-      [selectedProvider.id]: [
-        ...(previous[selectedProvider.id] || []),
-        newMessage,
-      ],
-    }));
-
-    setMessageText("");
-  };
-
-  return (
-    <View style={styles.screen}>
-      <KeyboardAvoidingView
-        style={styles.screen}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        {/* HEADER */}
-        <View style={styles.header}>
-          <SettingsButton color="#367FBD" />
-          {selectedProvider ? (
-            <>
-              <Pressable
-                style={styles.backButton}
-                onPress={() => setSelectedProvider(null)}
-              >
-                <Ionicons
-                  name="arrow-back-circle-outline"
-                  size={29}
-                  color="#367FBD"
-                />
-              </Pressable>
-
-              <Text style={styles.headerTitle}>
-                {selectedProvider.name}
-              </Text>
-            </>
-          ) : (
-            <Text style={styles.headerTitle}>
-              Messages
-            </Text>
-          )}
-        </View>
-
-        {/* MAIN CONTENT */}
-        {!selectedProvider ? (
-          <View style={styles.listContainer}>
-            {providers.map((provider) => (
-              <Pressable
-                key={provider.id}
-                style={({ pressed }) => [
-                  styles.providerCard,
-                  pressed && styles.providerPressed,
-                ]}
-                onPress={() =>
-                  setSelectedProvider(provider)
-                }
-              >
-                <View style={styles.providerInfo}>
-                  <Text style={styles.providerName}>
-                    {provider.name}
-                  </Text>
-
-                  <Text style={styles.providerSubtitle}>
-                    {provider.subtitle}
-                  </Text>
-                </View>
-
-                <Ionicons
-                  name="chevron-forward-outline"
-                  size={30}
-                  color="#4A8BC3"
-                />
-              </Pressable>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.chatContainer}>
-            {/* MESSAGE HISTORY */}
-            <ScrollView
-              style={styles.messageList}
-              contentContainerStyle={styles.messageContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {messages[selectedProvider.id]?.length === 0 ? (
-                <View style={styles.emptyChat}>
-                  <Ionicons
-                    name="chatbubble-outline"
-                    size={42}
-                    color="#B5B5B5"
-                  />
-
-                  <Text style={styles.emptyText}>
-                    No messages yet
-                  </Text>
-
-                  <Text style={styles.emptySubtext}>
-                    Send a message to your care team.
-                  </Text>
-                </View>
-              ) : (
-                messages[selectedProvider.id].map(
-                  (message) => (
-                    <View
-                      key={message.id}
-                      style={[
-                        styles.messageBubble,
-                        message.sender === "patient"
-                          ? styles.patientMessage
-                          : styles.providerMessage,
-                      ]}
-                    >
-                      <Text style={styles.messageText}>
-                        {message.text}
-                      </Text>
-                    </View>
-                  )
-                )
-              )}
-            </ScrollView>
-
-            {/* MESSAGE INPUT */}
-            <View style={styles.inputRow}>
-              <TextInput
-                value={messageText}
-                onChangeText={setMessageText}
-                placeholder="Send Message..."
-                placeholderTextColor="#6A9BC3"
-                style={styles.messageInput}
-                multiline
-                textAlignVertical="center"
-              />
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.sendButton,
-                  pressed && styles.sendPressed,
-                ]}
-                onPress={sendMessage}
-              >
-                <Ionicons
-                  name="paper-plane"
-                  size={25}
-                  color="#4A8BC3"
-                />
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        {/* BOTTOM NAVIGATION */}
-        <View style={styles.bottomNav}>
-          {/* Messages */}
-          <Pressable
-            style={styles.navItem}
-            onPress={() =>
-              router.replace("/messages")
-            }
-          >
-            <Ionicons
-              name="chatbox"
-              size={25}
-              color="#367FBD"
-            />
-
-            <Text
-              style={[
-                styles.navText,
-                styles.activeNavText,
-              ]}
-            >
-              Messages
-            </Text>
-          </Pressable>
-
-          {/* Exercise */}
-          <Pressable
-            style={styles.navItem}
-            onPress={() =>
-              router.push("/exercise")
-            }
-          >
-            <Ionicons
-              name="fitness"
-              size={27}
-              color="#4A8BC3"
-            />
-
-            <Text style={styles.navText}>
-              Exercise
-            </Text>
-          </Pressable>
-
-          {/* Progress */}
-          <Pressable
-            style={styles.navItem}
-            onPress={() =>
-              router.push("/progress")
-            }
-          >
-            <Ionicons
-              name="bar-chart"
-              size={27}
-              color="#4A8BC3"
-            />
-
-            <Text style={styles.navText}>
-              Progress
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.navItem}
-            onPress={() => router.push("/adherence")}
-          >
-            <Ionicons
-              name="shield-checkmark"
-              size={24}
-              color="#4A8BC3"
-            />
-
-            <Text style={styles.navText}>
-              Readiness
-            </Text>
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
+  const user=auth.currentUser;
+  const inset=useSafeAreaInsets();
+  const [loading,setLoading]=useState(true),[chatLoading,setChatLoading]=useState(false);
+  const [invites,setInvites]=useState<Row[]>([]),[links,setLinks]=useState<Row[]>([]),[messages,setMessages]=useState<Row[]>([]);
+  const [selected,setSelected]=useState(''),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  useEffect(()=>{
+    if(!user)return;
+    const fail=(e:Error)=>setError(e.message);
+    const a=onSnapshot(query(collection(db,'careInvites'),where('patient_id','==',user.uid)),snap=>setInvites(snap.docs.map(d=>({...d.data(),id:d.id} as Row)).filter(d=>d.status==='pending')),fail);
+    const b=onSnapshot(query(collection(db,'careLinks'),where('patient_id','==',user.uid)),snap=>{setLinks(snap.docs.map(d=>({...d.data(),id:d.id} as Row)).filter(d=>d.status==='active'));setLoading(false);},fail);
+    return()=>{a();b();};
+  },[user?.uid]);
+  const active=links.find(l=>l.id===selected);
+  useEffect(()=>{
+    setMessages([]);setText('');setChatLoading(!!active);
+    if(!active)return;
+    return onSnapshot(query(collection(db,'conversations',active.id,'messages'),orderBy('created_at','desc'),limit(100)),snap=>{setMessages(snap.docs.map(d=>({...d.data(),id:d.id} as Row)).reverse());setChatLoading(false);},e=>setError(e.message));
+  },[active?.id]);
+  async function run(action:()=>Promise<void>){if(busy)return;setBusy(true);setError('');try{await action();}catch(e){setError(e instanceof Error?e.message:'Please try again.');}finally{setBusy(false);}}
+  async function respond(invite:Row,accept:boolean){
+    if(!user)return;
+    if(accept){await user.reload();await user.getIdToken(true);if(!user.emailVerified)throw new Error('Verify your email before accepting. Check your inbox or use the button below.');}
+    const batch=writeBatch(db);
+    batch.update(doc(db,'careInvites',invite.id),{status:accept?'accepted':'declined',responded_at:serverTimestamp()});
+    if(accept)batch.set(doc(db,'careLinks',invite.link_id),{patient_id:user.uid,clinician_id:invite.clinician_id,clinician_name:invite.clinician_name,patient_name:invite.patient_name,invite_id:invite.id,status:'active',created_at:serverTimestamp()});
+    await batch.commit();
+  }
+  return <View style={ui.screen}>
+    <View style={[ui.header,{paddingTop:inset.top+12}]}>
+      {active?<Pressable accessibilityLabel="Back to messages" style={ui.headerButton} onPress={()=>setSelected('')}><Ionicons name="arrow-back" size={28} color="#367FBD"/></Pressable>:<View style={ui.headerButton}/>}
+      <Text style={ui.heading} numberOfLines={2}>{active?active.clinician_name:'Messages'}</Text>
+      <Pressable accessibilityLabel="Settings" style={[ui.headerButton,ui.settings]} onPress={()=>router.push('/settings')}><Ionicons name="settings-outline" size={25} color="#367FBD"/></Pressable>
     </View>
-  );
+    <KeyboardAvoidingView style={ui.body} behavior={Platform.OS==='ios'?'padding':undefined}>
+      {!!error&&<Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
+      {!active?<ScrollView contentContainerStyle={ui.list}>
+        {!user?.emailVerified&&<Button title="Send verification email" secondary busy={busy} onPress={()=>void run(async()=>{if(user)await sendEmailVerification(user);})}/>}
+        {invites.map(invite=><View style={ui.invite} key={invite.id}><Text style={ui.name}>{invite.clinician_name}</Text><Text style={ui.subtitle}>Would like to join your care team and view your recordings and surveys.</Text><Button title="Accept invitation" busy={busy} onPress={()=>void run(()=>respond(invite,true))}/><Button title="Decline" secondary disabled={busy} onPress={()=>void run(()=>respond(invite,false))}/></View>)}
+        {loading?<ActivityIndicator color="#367FBD"/>:!links.length&&!invites.length?<View style={ui.empty}><Ionicons name="people-outline" size={38} color="#98A1AB"/><Text style={ui.emptyTitle}>Your care team</Text><Text style={ui.emptyText}>Give your clinician the email you use to sign in. Their invitation will appear here.</Text></View>:null}
+        {links.map(link=><Pressable accessibilityRole="button" key={link.id} style={ui.provider} onPress={()=>{setError('');setSelected(link.id);}}><View style={{flex:1}}><Text style={ui.name}>{link.clinician_name}</Text><Text style={ui.subtitle}>Your care team</Text></View><Ionicons name="chevron-forward" size={25} color="#367FBD"/></Pressable>)}
+      </ScrollView>:<>
+        <ScrollView contentContainerStyle={[ui.chat,!messages.length&&{flexGrow:1,justifyContent:'center'}]} keyboardShouldPersistTaps="handled">
+          {chatLoading?<ActivityIndicator color="#367FBD"/>:!messages.length?<View style={ui.empty}><Ionicons name="chatbubble-outline" size={38} color="#98A1AB"/><Text style={ui.emptyTitle}>No messages yet</Text><Text style={ui.emptyText}>Send a message to your care team.</Text></View>:null}
+          {messages.map(message=><View key={message.id} style={[ui.bubble,message.sender_id===user?.uid?ui.outgoing:ui.incoming]}><Text style={ui.message}>{message.text}</Text></View>)}
+        </ScrollView>
+        <View style={ui.composer}><TextInput accessibilityLabel="Message" value={text} onChangeText={setText} placeholder="Send message…" placeholderTextColor="#498AC2" multiline maxLength={2000} style={ui.input}/><Pressable accessibilityLabel="Send message" accessibilityRole="button" disabled={busy||!text.trim()} style={[ui.send,(busy||!text.trim())&&{opacity:.45}]} onPress={()=>void run(async()=>{const ref=doc(collection(db,'conversations',active.id,'messages'));await setDoc(ref,{sender_id:user!.uid,text:text.trim(),created_at:serverTimestamp()});setText('');})}>{busy?<ActivityIndicator color="#367FBD"/>:<Ionicons name="paper-plane-outline" size={25} color="#367FBD"/>}</Pressable></View>
+      </>}
+    </KeyboardAvoidingView>
+    <View style={[ui.tabs,{paddingBottom:Math.max(inset.bottom,12)}]}>{([{label:'Messages',icon:'chatbubble',path:'/messages'},{label:'Exercise',icon:'fitness',path:'/exercise'},{label:'Progress',icon:'bar-chart',path:'/progress'},{label:'Readiness',icon:'shield-checkmark',path:'/adherence'}] as const).map(tab=><Pressable key={tab.label} accessibilityRole="button" accessibilityState={{selected:tab.label==='Messages'}} style={ui.tab} onPress={()=>router.replace(tab.path)}><Ionicons name={tab.icon} size={24} color="#367FBD"/><Text style={[ui.tabText,tab.label==='Messages'&&{fontWeight:'700'}]}>{tab.label}</Text></Pressable>)}</View>
+  </View>;
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-
-  /* =========================
-     HEADER
-     ========================= */
-
-  header: {
-    height: 120,
-    paddingTop: 52,
-    backgroundColor: "#C4DCEF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#76A9D2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  headerTitle: {
-    color: "#367FBD",
-    fontSize: 26,
-    fontWeight: "400",
-    textAlign: "center",
-    paddingHorizontal: 60,
-  },
-
-  backButton: {
-    position: "absolute",
-    left: 15,
-    top: 66,
-    width: 42,
-    height: 42,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
-
-  /* =========================
-     PROVIDER LIST
-     ========================= */
-
-  listContainer: {
-    flex: 1,
-    paddingHorizontal: 15,
-    paddingTop: 14,
-  },
-
-  providerCard: {
-    minHeight: 72,
-    backgroundColor: "#C9DEEF",
-    borderRadius: 17,
-    marginBottom: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  providerPressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.99 }],
-  },
-
-  providerInfo: {
-    flex: 1,
-    paddingRight: 10,
-  },
-
-  providerName: {
-    fontSize: 18,
-    color: "#111111",
-    fontWeight: "500",
-  },
-
-  providerSubtitle: {
-    fontSize: 14,
-    color: "#333333",
-    marginTop: 3,
-  },
-
-  /* =========================
-     CHAT
-     ========================= */
-
-  chatContainer: {
-    flex: 1,
-  },
-
-  messageList: {
-    flex: 1,
-    paddingHorizontal: 15,
-  },
-
-  messageContent: {
-    flexGrow: 1,
-    justifyContent: "flex-end",
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-
-  emptyChat: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 30,
-  },
-
-  emptyText: {
-    color: "#999999",
-    fontSize: 17,
-    fontWeight: "500",
-    marginTop: 12,
-  },
-
-  emptySubtext: {
-    color: "#B5B5B5",
-    fontSize: 14,
-    marginTop: 5,
-    textAlign: "center",
-  },
-
-  messageBubble: {
-    maxWidth: "78%",
-    paddingHorizontal: 15,
-    paddingVertical: 11,
-    borderRadius: 15,
-    marginBottom: 10,
-  },
-
-  patientMessage: {
-    alignSelf: "flex-end",
-    backgroundColor: "#C9DEEF",
-    borderBottomRightRadius: 5,
-  },
-
-  providerMessage: {
-    alignSelf: "flex-start",
-    backgroundColor: "#E8EFF5",
-    borderBottomLeftRadius: 5,
-  },
-
-  messageText: {
-    fontSize: 16,
-    color: "#222222",
-    lineHeight: 22,
-  },
-
-  /* =========================
-     MESSAGE INPUT
-     ========================= */
-
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 10,
-    backgroundColor: "#FFFFFF",
-  },
-
-  messageInput: {
-    flex: 1,
-    minHeight: 48,
-    maxHeight: 100,
-    backgroundColor: "#D5E7F3",
-    borderRadius: 25,
-    paddingHorizontal: 17,
-    paddingVertical: 11,
-    color: "#222222",
-    fontSize: 16,
-  },
-
-  sendButton: {
-    width: 48,
-    height: 48,
-    marginLeft: 7,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#D5E7F3",
-  },
-
-  sendPressed: {
-    opacity: 0.6,
-    transform: [{ scale: 0.92 }],
-  },
-
-  /* =========================
-     BOTTOM NAV
-     ========================= */
-
-  bottomNav: {
-    height: 88,
-    paddingBottom: 18,
-    flexDirection: "row",
-    backgroundColor: "#D9E8F4",
-    borderTopWidth: 1,
-    borderTopColor: "#78ABD2",
-  },
-
-  navItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRightWidth: 1,
-    borderRightColor: "#78ABD2",
-  },
-
-  navText: {
-    color: "#4A8BC3",
-    fontSize: 12,
-    marginTop: 3,
-  },
-
-  activeNavText: {
-    fontWeight: "600",
-  },
+const ui=StyleSheet.create({
+ screen:{flex:1,backgroundColor:'#FFFFFF'},body:{flex:1},header:{backgroundColor:'#C4DCEF',paddingHorizontal:16,paddingBottom:14,flexDirection:'row',alignItems:'center',gap:10},headerButton:{width:44,height:44,alignItems:'center',justifyContent:'center'},settings:{backgroundColor:'white',borderRadius:22},heading:{flex:1,textAlign:'center',fontSize:27,fontWeight:'700',color:'#367FBD'},list:{padding:18,gap:14},provider:{backgroundColor:'#C2DAEC',borderRadius:23,padding:18,flexDirection:'row',alignItems:'center',gap:12},name:{fontSize:21,fontWeight:'700',color:'#202B33'},subtitle:{fontSize:16,color:'#56626B',marginTop:4,lineHeight:23},invite:{backgroundColor:'#EFF6FB',padding:18,borderRadius:23,gap:10},empty:{alignItems:'center',padding:26,gap:10},emptyTitle:{fontSize:21,color:'#8B949E',fontWeight:'600'},emptyText:{fontSize:16,color:'#8B949E',textAlign:'center',lineHeight:24},chat:{padding:18,gap:12},bubble:{borderRadius:20,paddingHorizontal:16,paddingVertical:12,maxWidth:'85%'},outgoing:{alignSelf:'flex-end',backgroundColor:'#D5E5F5',borderBottomRightRadius:5},incoming:{alignSelf:'flex-start',backgroundColor:'#F0F3F6',borderBottomLeftRadius:5},message:{fontSize:17,lineHeight:24,color:'#202B33'},composer:{flexDirection:'row',alignItems:'flex-end',padding:12,gap:9},input:{flex:1,backgroundColor:'#D5E5F5',borderRadius:27,paddingHorizontal:18,paddingTop:14,paddingBottom:14,fontSize:17,color:'#202B33',maxHeight:130},send:{width:50,height:50,borderRadius:25,backgroundColor:'#D5E5F5',alignItems:'center',justifyContent:'center'},tabs:{flexDirection:'row',backgroundColor:'#D8E7F3',paddingTop:14,borderTopWidth:1,borderTopColor:'#B1CEE5'},tab:{flex:1,alignItems:'center',gap:6,borderRightWidth:1,borderRightColor:'#B1CEE5',paddingVertical:3},tabText:{fontSize:13,color:'#367FBD'},error:{color:'#A53535',padding:14,backgroundColor:'#FFF0F0'}
 });
