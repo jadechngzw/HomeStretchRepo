@@ -288,16 +288,6 @@ def per_rep_chart(recording, key, title):
     return chart.properties(height=240, title=title)
 
 
-def rep_duration_bars(recording):
-    rows = [{'rep': r.get('rep'), 'seconds': r.get('duration_sec'), 'classification': {'typical': 'Typical', 'atypical': 'Outside baseline'}.get(r.get('classification'), 'Unassessed')}
-            for r in recording.get('rep_assessments') or [] if isinstance(r.get('duration_sec'), (int, float)) and isinstance(r.get('rep'), (int, float))]
-    if not rows: return None
-    return alt.Chart(pd.DataFrame(rows)).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
-        x=alt.X('rep:O', title='Repetition', axis=alt.Axis(labelAngle=0)), y=alt.Y('seconds:Q', title='Seconds'),
-        color=alt.Color('classification:N', scale=alt.Scale(domain=CLASS_DOMAIN, range=CLASS_RANGE), legend=alt.Legend(title=None, orient='top')),
-        tooltip=[alt.Tooltip('rep:O', title='Rep'), alt.Tooltip('seconds:Q', format='.2f'), alt.Tooltip('classification:N')]).properties(height=260)
-
-
 # ---------------------------------------------------------------- messages
 def conversation(link, height=420):
     patient_id = link['patient_id']
@@ -425,30 +415,22 @@ def recording_detail(patient_id, recording):
         st.warning('This recording was interrupted. Results may be incomplete.')
     flags = [(r.get('rep'), [METRICS.get(f, f) for f in r.get('features_outside_baseline') or []])
              for r in recording.get('rep_assessments') or [] if r.get('features_outside_baseline')]
-    left, right = st.columns([1.4, 1], gap='medium')
-    with left:
-        chart = rep_duration_bars(recording)
-        with card():
-            section('Time per repetition')
-            if chart is not None: st.altair_chart(chart, width='stretch')
-            else: st.caption('Per-rep timing is not available for this set (for example, manually counted sets).')
-    with right:
-        with card():
-            section('Set notes')
-            if flags:
-                st.caption('Reps outside baseline')
-                for rep, features in flags: st.markdown(f"**Rep {rep}** · {html.escape(', '.join(features))}")
-            else: st.caption('No reps were flagged outside baseline.')
-            if recording.get('local_date'):
-                daily = backend.surveys(token, patient_id, recording['local_date'])
-                for phase, title in [('before', 'Before exercise'), ('after', 'After exercise')]:
-                    answer = daily.get(phase)
-                    if answer:
-                        st.write(f"**{title}:** pain {answer.get('pain')} / 10")
-                        for field in ('symptoms', 'notes'):
-                            if answer.get(field): st.caption(str(answer[field]))
-                        if answer.get('regions'): st.caption(', '.join(answer['regions']))
-                    else: st.caption(f'{title}: survey not received')
+    with card():
+        section('Set notes')
+        if flags:
+            st.caption('Reps outside baseline')
+            for rep, features in flags: st.markdown(f"**Rep {rep}** · {html.escape(', '.join(features))}")
+        else: st.caption('No reps were flagged outside baseline.')
+        if recording.get('local_date'):
+            daily = backend.surveys(token, patient_id, recording['local_date'])
+            for phase, title in [('before', 'Before exercise'), ('after', 'After exercise')]:
+                answer = daily.get(phase)
+                if answer:
+                    st.write(f"**{title}:** pain {answer.get('pain')} / 10")
+                    for field in ('symptoms', 'notes'):
+                        if answer.get(field): st.caption(str(answer[field]))
+                    if answer.get('regions'): st.caption(', '.join(answer['regions']))
+                else: st.caption(f'{title}: survey not received')
     section('Movement metrics by repetition')
     st.caption('Shaded bands show the baseline saved with this set. Red points are outside that range, not a diagnosis.')
     columns, shown = st.columns(2), 0
