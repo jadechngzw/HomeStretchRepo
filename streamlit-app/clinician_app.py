@@ -263,12 +263,12 @@ def set_checkboxes(labels, prefix):
         st.session_state[all_key] = all(st.session_state[k] for k in keys.values())
 
     st.session_state[all_key] = all(st.session_state[k] for k in keys.values())
-    st.checkbox('Select all', key=all_key, on_change=toggle_all)
-    per_row = 5
-    for start in range(0, len(labels), per_row):
-        cols = st.columns(per_row)
-        for col, label in zip(cols, labels[start:start + per_row]):
-            col.checkbox(label, key=keys[label], on_change=sync_all)
+    picked = sum(st.session_state[k] for k in keys.values())
+    summary = f'Sets: All ({len(labels)})' if picked == len(labels) else 'Sets: none' if picked == 0 else f'Sets: {picked} of {len(labels)}'
+    with st.popover(summary, width='stretch'):
+        st.checkbox('Select all', key=all_key, on_change=toggle_all)
+        for label in labels:
+            st.checkbox(label, key=keys[label], on_change=sync_all)
     return [label for label in labels if st.session_state[keys[label]]]
 
 
@@ -514,9 +514,10 @@ def profile_page(link):
                 if not keys:
                     st.caption('These sets have no per-rep movement metrics yet. Sets recorded with a saved baseline include them.')
                 else:
-                    key = st.selectbox('Metric', keys, format_func=METRICS.get, key=f'metric_{patient_id}')
+                    metric_col, sets_col = st.columns([2, 1], vertical_alignment='bottom')
+                    with metric_col: key = st.selectbox('Metric', keys, format_func=METRICS.get, key=f'metric_{patient_id}')
                     _, set_order = set_label_map(selected)
-                    shown = set_checkboxes(set_order, f'trend_{patient_id}_{chosen}')
+                    with sets_col: shown = set_checkboxes(set_order, f'trend_{patient_id}_{chosen}')
                     chart = metric_trend_chart(selected, key, shown)
                     if chart is not None: st.altair_chart(chart, width='stretch')
                     else: st.caption('No sets selected. Tick at least one set above.')
