@@ -77,7 +77,13 @@ def surveys(token, patient_id, local_date):
 
 def invite_patient(token, email):
     uid, profile = clinician(token)
-    patient = auth.get_user_by_email(email.strip())
+    email = (email or '').strip()
+    if not email:
+        raise ValueError('Enter the patient’s email.')
+    try:
+        patient = auth.get_user_by_email(email)
+    except auth.UserNotFoundError:
+        raise ValueError('No HomeStretch account uses that email. Ask the patient to create one in the app first.')
     if patient.uid == uid:
         raise ValueError('Use the patient’s email, not your own.')
     target = database().collection('users').document(patient.uid).get().to_dict() or {}
@@ -91,15 +97,27 @@ def invite_patient(token, email):
     ref = database().collection('careInvites').document(link_id)
     existing = ref.get().to_dict() or {}
     if existing.get('status') == 'pending' and existing.get('expires_at', datetime.min.replace(tzinfo=timezone.utc)) > datetime.now(timezone.utc):
-        return
+        return 'already_pending'
     ref.set({'patient_id':patient.uid, 'patient_name':patient.display_name or patient.email,
              'clinician_id':uid, 'clinician_name':profile.get('display_name') or 'Clinician',
              'link_id':link_id, 'status':'pending', 'created_at':firestore.SERVER_TIMESTAMP,
              'expires_at':datetime.now(timezone.utc)+timedelta(days=7)})
+    return 'sent'
 
 def invitations(token):
     uid, _ = clinician(token)
     return [dict(d.to_dict(), id=d.id) for d in database().collection('careInvites').where(filter=FieldFilter('clinician_id','==',uid)).stream()]
+
+def cancel_invitation(token, invite_id):
+    uid, _ = clinician(token)
+    ref = database().collection('careInvites').document(invite_id)
+    data = ref.get().to_dict() or {}
+    if data.get('clinician_id') != uid:
+        raise PermissionError('This invitation does not belong to your account.')
+    if data.get('status') != 'pending':
+        raise ValueError('Only pending invitations can be cancelled.')
+    # The patient app lists pending invitations only, so a cancelled one disappears there.
+    ref.update({'status': 'cancelled', 'responded_at': firestore.SERVER_TIMESTAMP})
 
 def messages(token, patient_id):
     _, link = require_patient(token, patient_id)

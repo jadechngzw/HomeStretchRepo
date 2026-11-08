@@ -24,3 +24,71 @@ def metric_frame(recording,key):
         status='No baseline' if not band else 'Outside baseline' if value<band['lower'] or value>band['upper'] else 'Within baseline'
         values.append({'rep':row['rep'],'value':value,'status':status})
     return values,band
+
+# ---- Cross-session trends (e.g. bicep curls over time) ----
+from datetime import datetime
+
+def exercise_of(recording):
+    """Return (id, name) for a recording; legacy string exercises use the name as id."""
+    exercise=recording.get('exercise')
+    if isinstance(exercise,dict):
+        name=exercise.get('name') or exercise.get('id') or 'Exercise'
+        return str(exercise.get('id') or name), str(name)
+    name=str(exercise) if exercise else 'Exercise'
+    return name, name
+
+def is_bicep_curl(recording):
+    exercise_id,name=exercise_of(recording)
+    text=f'{exercise_id} {name}'.casefold()
+    return 'bicep' in text or 'curl' in text
+
+def recording_time(recording):
+    for key in ('started_at','ended_at'):
+        value=recording.get(key)
+        if isinstance(value,datetime): return value
+        if isinstance(value,str):
+            try: return datetime.fromisoformat(value.replace('Z','+00:00'))
+            except ValueError: pass
+    return None
+
+def _count(recording,key):
+    value=recording.get(key)
+    return int(value) if finite(value) else None
+
+def session_trend_frame(recordings):
+    """One row per recording and classification; recordings without counts are skipped."""
+    rows=[]
+    for recording in recordings:
+        when=recording_time(recording)
+        if when is None: continue
+        counts={'Typical':_count(recording,'num_typical'),'Outside baseline':_count(recording,'num_atypical'),'Unassessed':_count(recording,'num_unassessed')}
+        if all(v is None for v in counts.values()):
+            total=_count(recording,'num_reps')
+            if total is None: continue
+            counts={'Unassessed':total}
+        for label,value in counts.items():
+            if value is not None: rows.append({'session':recording.get('id'),'time':when,'classification':label,'reps':value})
+    return rows
+
+def rep_duration_frame(recordings):
+    """Mean measured rep duration per recording; null durations (manual sets) are excluded."""
+    rows=[]
+    for recording in recordings:
+        when=recording_time(recording)
+        durations=[r.get('duration_sec') for r in recording.get('rep_assessments') or [] if finite(r.get('duration_sec'))]
+        if when is None or not durations: continue
+        rows.append({'session':recording.get('id'),'time':when,'mean':sum(durations)/len(durations),'min':min(durations),'max':max(durations),'reps':len(durations)})
+    return rows
+
+def metric_trend_frame(recordings,key):
+    """Per-recording mean of one assessable per-rep metric, with that recording's own baseline band."""
+    rows=[]
+    for recording in recordings:
+        when=recording_time(recording)
+        values,band=metric_frame(recording,key)
+        if when is None or not values: continue
+        nums=[v['value'] for v in values]
+        row={'session':recording.get('id'),'time':when,'mean':sum(nums)/len(nums),'min':min(nums),'max':max(nums),'outside':sum(v['status']=='Outside baseline' for v in values),'reps':len(nums)}
+        if band: row.update(lower=band['lower'],upper=band['upper'])
+        rows.append(row)
+    return rows
