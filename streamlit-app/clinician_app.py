@@ -12,7 +12,7 @@ import altair as alt
 import streamlit as st
 import clinician_backend as backend
 from clinician_charts import (METRICS, metric_frame, exercise_of, is_bicep_curl, recording_time,
-                              session_trend_frame, rep_duration_frame, metric_trend_frame)
+                              session_trend_frame, rep_duration_frame, metric_trend_frame, metric_by_rep_frame)
 
 st.set_page_config(page_title='HomeStretch | Clinician', page_icon='🏠', layout='wide')
 st.markdown("""<style>
@@ -221,23 +221,17 @@ def duration_chart(recordings):
 
 
 def metric_trend_chart(recordings, key):
-    rows = metric_trend_frame(recordings, key)
+    """Stored per-rep values, unchanged: x = rep number, one line per set."""
+    rows = metric_by_rep_frame(recordings, key)
     if not rows: return None
     frame, order = x_labels(rows)
-    x = alt.X('set:O', sort=order, title=None, axis=alt.Axis(labelAngle=-35, labelLimit=140))
-    tooltip = [alt.Tooltip('set:O', title='Set'), alt.Tooltip('mean:Q', title='Mean', format='.2f'), alt.Tooltip('min:Q', format='.2f'),
-               alt.Tooltip('max:Q', format='.2f'), alt.Tooltip('outside:Q', title='Reps outside baseline')]
-    layers = []
-    if 'lower' in frame:
-        banded = frame.dropna(subset=['lower', 'upper'])
-        layers.append(alt.Chart(banded).mark_tick(color='#45836C', thickness=2, size=22).encode(x=x, y='lower:Q'))
-        layers.append(alt.Chart(banded).mark_tick(color='#45836C', thickness=2, size=22).encode(x=x, y='upper:Q'))
-        layers.append(alt.Chart(banded).mark_rule(color='#DDEDE5', strokeWidth=22, opacity=.7).encode(x=x, y='lower:Q', y2='upper:Q'))
-    layers.append(alt.Chart(frame).mark_rule(color='#7A8694').encode(x=x, y=alt.Y('min:Q', title=METRICS[key], scale=alt.Scale(zero=False)), y2='max:Q', tooltip=tooltip))
-    layers.append(alt.Chart(frame).mark_circle(size=90, opacity=1).encode(
-        x=x, y='mean:Q', tooltip=tooltip,
-        color=alt.condition(alt.datum.outside > 0, alt.value('#C24C54'), alt.value('#2C6FAD'))))
-    return alt.layer(*layers).properties(height=280)
+    tooltip = [alt.Tooltip('set:N', title='Set'), alt.Tooltip('rep:O', title='Rep'), alt.Tooltip('value:Q', title=METRICS[key], format='.3f')]
+    return alt.Chart(frame).mark_line(point=alt.OverlayMarkDef(size=55, filled=True)).encode(
+        x=alt.X('rep:O', title='Repetition', axis=alt.Axis(labelAngle=0)),
+        y=alt.Y('value:Q', title=METRICS[key], scale=alt.Scale(zero=False)),
+        color=alt.Color('set:N', sort=order, legend=alt.Legend(title='Set', orient='top')),
+        tooltip=tooltip,
+    ).properties(height=300)
 
 
 def per_rep_chart(recording, key, title):
@@ -478,13 +472,13 @@ def profile_page(link):
                     else: st.caption('Per-rep timing is not available for these sets.')
             with card():
                 section('Movement metric across sets')
-                keys = [k for k in METRICS if metric_trend_frame(selected, k)]
+                keys = [k for k in METRICS if metric_by_rep_frame(selected, k)]
                 if not keys:
                     st.caption('These sets have no per-rep movement metrics yet. Sets recorded with a saved baseline include them.')
                 else:
                     key = st.selectbox('Metric', keys, format_func=METRICS.get, key=f'metric_{patient_id}')
                     st.altair_chart(metric_trend_chart(selected, key), width='stretch')
-                    st.caption('Dot: mean of assessable reps (red when any rep was outside baseline). Gray line: rep range. Green band: baseline range saved with that set.')
+                    st.caption('Each line is one set. Points are the per-rep values exactly as stored, in rep order (rep 1, rep 2, …).')
     with tab_sets:
         if not recordings:
             st.info('No sets yet.')

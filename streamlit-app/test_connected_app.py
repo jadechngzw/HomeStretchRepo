@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import clinician_backend as backend
-from clinician_charts import metric_frame, session_trend_frame, rep_duration_frame, metric_trend_frame, is_bicep_curl
+from clinician_charts import metric_frame, session_trend_frame, rep_duration_frame, metric_trend_frame, metric_by_rep_frame, is_bicep_curl
 
 class ChartTests(unittest.TestCase):
     def test_no_fake_values_for_legacy_or_unassessed_rows(self):
@@ -33,6 +33,8 @@ class TrendTests(unittest.TestCase):
         self.assertEqual(len(durations),1);self.assertAlmostEqual(durations[0]['mean'],2.5)
         trend=metric_trend_frame(rows,'x')
         self.assertEqual(trend[0]['mean'],5);self.assertEqual(trend[0]['outside'],2);self.assertEqual(trend[0]['upper'],5.5)
+        raw=metric_by_rep_frame(rows,'x')
+        self.assertEqual([(r['rep'],r['value']) for r in raw],[(1,4),(2,6),(3,99)])
 
 class AccessTests(unittest.TestCase):
     def test_role_checked_even_for_valid_token(self):

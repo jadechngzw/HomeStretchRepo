@@ -92,3 +92,15 @@ def metric_trend_frame(recordings,key):
         if band: row.update(lower=band['lower'],upper=band['upper'])
         rows.append(row)
     return rows
+
+def metric_by_rep_frame(recordings,key):
+    """Stored per-rep metric values exactly as read, one row per rep; reps with no stored value are skipped."""
+    rows=[]
+    for recording in recordings:
+        when=recording_time(recording)
+        if when is None: continue
+        for row in recording.get('rep_assessments') or []:
+            value=(row.get('metrics') or {}).get(key)
+            if finite(value) and finite(row.get('rep')):
+                rows.append({'session':recording.get('id'),'time':when,'rep':int(row['rep']),'value':value,'classification':row.get('classification')})
+    return rows
