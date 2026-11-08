@@ -10,7 +10,17 @@ test('legacy reps stay unassessed; invalid values rejected',()=>{const d=make();
 test('baseline flags and zero pain survive JSON round trip',()=>{const d=schema.makeSession({id:'s',patient:null,exercise:{id:'curl',name:'Curl'},startedAt:1000,endedAt:4000,protocolSessionId:1,complete:true,survey:{pain:0},result:{reps:[{id:1,duration:2,assessable:true,flags:['gyro_mean_deg_s']}],stillness:true,unconfirmedFinal:false,placementWarning:false}});schema.validateSession(d);assert.equal(JSON.parse(JSON.stringify(d)).pre_exercise_pain,0);assert.equal(d.num_atypical,1);assert.deepEqual(d.atypical_rep_ids,[1]);});
 test('failed uploads stay pending and retry the same document ID without duplicates',async()=>{
  const entry={document:make(),status:'pending'};let fail=true;const writes=[];
- const upload=load('upload',{'./schema':schema,'../firebase/config':{db:{}},'firebase/firestore':{doc:(_db,c,id)=>`${c}/${id}`,Timestamp:{fromDate:d=>d},setDoc:async(ref,payload)=>{writes.push({ref,payload});if(fail)throw {code:'permission-denied'};}},'../baseline/store':{getCatalog:()=>({ready:true,data:{sessionUploads:[entry]}}),markUpload:async(id,error)=>{entry.status=error?'pending':'synced';entry.error=error;}}});
+ const upload=load('upload',{'./schema':schema,'../firebase/config':{db:{},auth:{currentUser:{uid:'test-patient'}}},'firebase/firestore':{doc:(_db,c,id)=>`${c}/${id}`,Timestamp:{fromDate:d=>d},setDoc:async(ref,payload)=>{writes.push({ref,payload});if(fail)throw {code:'permission-denied'};}},'../baseline/store':{getCatalog:()=>({ready:true,data:{surveys:[],sessionUploads:[entry]}}),markUpload:async(id,error)=>{entry.status=error?'pending':'synced';entry.error=error;}}});
  await upload.syncSessions();assert.equal(entry.status,'pending');assert.match(entry.error,/permission-denied/);fail=false;await Promise.all([upload.syncSessions(),upload.syncSessions()]);assert.equal(entry.status,'synced');await upload.syncSessions();assert.equal(writes.length,2);assert.ok(writes.every(w=>w.ref==='sessions/test-session'));assert.ok(writes[0].payload.started_at instanceof Date);
 });
-test('unlinked sessions are never uploaded under a guessed patient',async()=>{let wrote=false;const d=make();d.patient=null;const u=load('upload',{'./schema':schema,'../firebase/config':{db:{}},'firebase/firestore':{setDoc:()=>{wrote=true;}},'../baseline/store':{getCatalog:()=>({ready:true,data:{sessionUploads:[{document:d,status:'pending'}]}})}});await u.syncSessions();assert.equal(wrote,false);});
+test('unlinked sessions are never uploaded under a guessed patient',async()=>{let wrote=false;const d=make();d.patient=null;const u=load('upload',{'./schema':schema,'../firebase/config':{db:{},auth:{currentUser:{uid:'test-patient'}}},'firebase/firestore':{setDoc:()=>{wrote=true;}},'../baseline/store':{getCatalog:()=>({ready:true,data:{surveys:[],sessionUploads:[{document:d,status:'pending'}]}})}});await u.syncSessions();assert.equal(wrote,false);});
+
+test('upload never writes another patient’s pending session under the current login',async()=>{
+ let writes=0;const d=make();
+ const u=load('upload',{'./schema':schema,'../firebase/config':{db:{},auth:{currentUser:{uid:'different-patient'}}},'firebase/firestore':{setDoc:()=>{writes++;}},'../baseline/store':{getCatalog:()=>({ready:true,data:{surveys:[],sessionUploads:[{document:d,status:'pending'}]}})}});
+ await u.syncSessions();assert.equal(writes,0);
+});
+test('manual sets preserve counts without inventing movement metrics or durations',()=>{
+ const d=schema.makeSession({id:'manual',patient:{id:'p',name:'P'},exercise:{id:'x',name:'X'},startedAt:1000,endedAt:4000,protocolSessionId:0,manualReps:3,complete:true});
+ schema.validateSession(d);assert.equal(d.num_reps,3);assert.equal(d.num_unassessed,3);assert.deepEqual(d.rep_durations,[null,null,null]);assert.ok(d.rep_assessments.every(r=>r.metrics===null));
+});

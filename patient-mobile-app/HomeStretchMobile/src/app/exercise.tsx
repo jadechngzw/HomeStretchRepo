@@ -1,5 +1,6 @@
 import { activeBaselines, isActive } from '../baseline/activation';
 import React from "react";
+import { useDailySurveys } from "../baseline/useDailySurveys";
 import SettingsButton from "../components/SettingsButton";
 import {
   View,
@@ -17,6 +18,7 @@ import { Badge, Button, Hint } from "../baseline/ui";
 
 export default function ExerciseScreen() {
   const catalog = useCatalog();
+  const daily = useDailySurveys();
   const exercises = getExercises(catalog.data);
   return (
     <View style={styles.screen}>
@@ -44,13 +46,14 @@ export default function ExerciseScreen() {
               styles.exerciseCard,
               pressed && styles.cardPressed,
             ]}
+            disabled={!catalog.ready || !!catalog.error}
             onPress={() =>
-              router.push({
+              router.push(daily.before ? {
                 pathname: "/exercise-detail",
                 params: {
                   id: exercise.id,
                 },
-              })
+              } : { pathname: "/survey", params: { phase: "before", exerciseId: exercise.id } })
             }
           >
             <Text style={styles.exerciseName}>
@@ -84,15 +87,16 @@ export default function ExerciseScreen() {
         ))}
 
         {/* SURVEY */}
-        <Pressable
+        {daily.after ? <Text style={styles.instructions}>Today’s surveys are complete</Text> : daily.before ? <Pressable
+          accessibilityRole="button"
           style={({ pressed }) => [
             styles.surveyButton,
             pressed && styles.surveyPressed,
           ]}
-          onPress={() => router.push("/survey")}
+          onPress={() => router.push({ pathname: "/survey", params: { phase: "after" } })}
         >
           <Text style={styles.surveyButtonText}>
-            Post-Exercise Survey
+            Finish for today
           </Text>
 
           <Ionicons
@@ -100,7 +104,7 @@ export default function ExerciseScreen() {
             size={22}
             color="#FFFFFF"
           />
-        </Pressable>
+        </Pressable> : null}
       </ScrollView>
 
       {/* BOTTOM NAV */}

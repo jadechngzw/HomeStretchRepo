@@ -1,3 +1,4 @@
+import { patientIdentity } from '../firebase/patientIdentity';
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, AppState, Linking, Pressable, Text, View } from 'react-native';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
@@ -22,6 +23,9 @@ export default function LiveExercise({ exercise, baselines, preSurvey, preferred
 }) {
   const catalog=useCatalog();
   const [savedId,setSavedId]=useState('');
+  const recordingId=useRef('');
+  const interruptedSaved=useRef('');
+  const latestResult=useRef<LiveResult|null>(null);
   const patient=useRef<PatientProfile|null>(null);
   const saved=catalog.data.sessionUploads?.find(s=>s.document.session_id===savedId);
   const [recorder] = useState(() => new BaselineRecorder(() => connection.getConnectedDevice()));
@@ -39,15 +43,23 @@ export default function LiveExercise({ exercise, baselines, preSurvey, preferred
   const [now, setNow] = useState(Date.now()), [focused, setFocused] = useState(false);
   const [cameraEnabled] = useCameraPreference(), [permission, requestPermission] = useCameraPermissions();
   const badData = capture.invalid > 0 || capture.missing > 0 || capture.unexpected > 0 || capture.phase === 'interrupted';
+  latestResult.current=result;
   const reps = result?.reps ?? [], latest = reps.at(-1);
   const pace = paceCue(reps.filter(r => r.assessable).map(r => r.duration));
   const elapsed = capture.startedAt ? Math.max(0, (now - capture.startedAt) / 1000) : 0;
   useEffect(() => { setPlacementConfirmed(false); }, [selected?.id]);
   useEffect(() => {
     mounted.current = true;
+    const persistInterrupted=recorder.subscribe(()=>{
+      const state=recorder.getSnapshot();
+      if(state.phase!=='interrupted'||!state.startedAt||!recordingId.current||interruptedSaved.current===recordingId.current||!patient.current)return;
+      interruptedSaved.current=recordingId.current;
+      const document=makeSession({id:recordingId.current,patient:patient.current,exercise,startedAt:state.startedAt,endedAt:state.endedAt??Date.now(),protocolSessionId:state.sessionId,survey:sessionSurvey.current,baseline:frozen.current??undefined,result:latestResult.current??undefined,complete:false});
+      void saveSession(document).then(()=>syncSessions()).catch(()=>{if(mounted.current)setError('Could not save the interrupted set. Check device storage.');});
+    });
     const sub = AppState.addEventListener('change', state => { if (state !== 'active') recorder.interrupt('Set interrupted when the app left the screen. Start a new set when ready.'); });
     const unsubscribe = connection.subscribe(() => { if (connection.getSnapshot().phase !== 'connected') recorder.interrupt('Watch disconnected. Reconnect and start a new set.'); });
-    return () => { mounted.current = false; clearTimeout(timer.current); recorder.interrupt(); sub.remove(); unsubscribe(); };
+    return () => { mounted.current = false; clearTimeout(timer.current); recorder.interrupt(); persistInterrupted(); sub.remove(); unsubscribe(); };
   }, [recorder]);
   useFocusEffect(useCallback(() => { setFocused(true); return () => { setFocused(false); clearTimeout(timer.current); recorder.interrupt('Set interrupted when you left the exercise.'); }; }, [recorder]));
   usePreventRemove(running, ({data}) => {
@@ -71,11 +83,12 @@ export default function LiveExercise({ exercise, baselines, preSurvey, preferred
   }, [running, recorder]);
   async function start() {
     if (lock.current || !preSurvey || !selected || !placementConfirmed) return;
+    recordingId.current=uid();
     lock.current = true; setBusy(true); setError(''); setSavedId(''); setResult(null); setFinishing(false);
     // Freeze both reference and survey for this set, even if the catalog changes elsewhere.
     frozen.current = JSON.parse(JSON.stringify(selected)) as Baseline;
     sessionSurvey.current = {...preSurvey};
-    patient.current = getCatalog().data.patientProfile ? {...getCatalog().data.patientProfile!} : null;
+    patient.current = patientIdentity();
     try { await recorder.start(selected.placement.wrist); setNow(Date.now()); }
     finally { lock.current = false; if (mounted.current) setBusy(false); }
   }
@@ -86,9 +99,9 @@ export default function LiveExercise({ exercise, baselines, preSurvey, preferred
     if (state.phase !== 'ended' || !state.complete) { lock.current=false; setBusy(false); setError('This set could not be fully assessed because movement data was missing or interrupted. Start a new set.'); return; }
     try {
       const final = assessFrames(recorder.getFrames(), frozen.current!.reference, true); setResult(final); setError('');
-      const id=uid();
+      const id=recordingId.current;
       const document=makeSession({id,patient:patient.current,exercise,startedAt:state.startedAt!,endedAt:state.endedAt!,protocolSessionId:state.sessionId,survey:sessionSurvey.current,baseline:frozen.current!,result:final,complete:true});
-      await saveSession(document,recorder.getFrames());
+      await saveSession(document);
       if(mounted.current && recorder.getSnapshot().sessionId===state.sessionId)setSavedId(id);
       void syncSessions().catch(()=>{});
     } catch (e) { setError(e instanceof Error?e.message:'This set could not be assessed.'); }
@@ -114,12 +127,13 @@ export default function LiveExercise({ exercise, baselines, preSurvey, preferred
     </View>}
     <Text style={s.small}>{wearable.message}</Text>
     {wearable.phase!=='connected'&&<Button title="Connect watch" secondary onPress={()=>router.push('/settings')}/>}
-    {!running&&<Button title={preSurvey?`Pain before exercise: ${preSurvey.pain}/10 · Update`:'Complete pre-exercise survey'} secondary onPress={()=>router.push({pathname:'/survey',params:{phase:'before',exerciseId:exercise.id,returnTo:'exercise'}})}/>}
+    {!running&&preSurvey&&<Text style={s.small}>Pre-exercise survey completed today</Text>}
+    {!running&&!preSurvey&&<Button title='Pre-exercise survey' secondary onPress={()=>router.push({pathname:'/survey',params:{phase:'before',exerciseId:exercise.id,returnTo:'exercise'}})}/>}
     <Card><Text accessibilityLiveRegion="polite" style={[s.title,{textAlign:'center'}]}>{status}</Text><Text style={{fontSize:54,color:colors.blue,textAlign:'center',fontWeight:'600'}}>{reps.length} <Text style={{fontSize:20}}>/ {exercise.reps}</Text></Text><Text style={[s.small,{textAlign:'center'}]}>Reps · {Math.floor(elapsed/60)}:{String(Math.floor(elapsed%60)).padStart(2,'0')}</Text></Card>
     {running?<Button title={finishing?'Finishing…':'End set'} danger busy={busy} disabled={capture.phase!=='active'} onPress={finish}/>:<Button title={ended?'Start next set':'Start exercise'} busy={busy} disabled={!preSurvey||!placementConfirmed||wearable.phase!=='connected'} onPress={()=>void start()}/>}
     {badData?<Hint error>{capture.phase==='interrupted'?capture.message:'Movement data is missing or invalid. Rep comparisons are unavailable for this set.'}</Hint>:error?<Hint error>{error}</Hint>:latest&&<View style={[s.card,{backgroundColor:!latest.assessable?colors.card:latest.flags.length?colors.amber:colors.green}]}><Text accessibilityLiveRegion="polite" style={s.title}>Rep {latest.id}: {!latest.assessable?'Could not assess':latest.flags.length?'Atypical':'Within range'}</Text></View>}
     {cameraEnabled&&permission?.granted&&focused?<CameraView facing="front" style={{height:260,borderRadius:16}}/>:cameraEnabled&&<Button title="Enable exercise camera" secondary onPress={()=>{if(permission?.canAskAgain===false)void Linking.openSettings();else void requestPermission();}}/>}
     {saved&&<Text accessibilityLiveRegion="polite" style={s.small}>{saved.status==='synced'?'Session synced':'Saved on phone · sync pending'}</Text>}
-    {!running&&<><Button title="Post-exercise survey" secondary disabled={busy} onPress={()=>router.push({pathname:'/survey',params:{exerciseId:exercise.id,sessionId:savedId}})}/></>}
+    {!running&&<><Button title="Back to exercises" secondary disabled={busy} onPress={()=>router.dismissTo('/exercise')}/></>}
   </Page>;
 }

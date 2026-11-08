@@ -63,12 +63,7 @@ PAIN_ALERT_THRESHOLD = 8
 # -----------------------
 
 if not firebase_admin._apps:
-
-    credential_file = next((p / "homestretch-pipeline-5f8f03e61254.json" for p in [Path(__file__).resolve().parent, REPO_ROOT, REPO_ROOT / "streamlit-app"] if (p / "homestretch-pipeline-5f8f03e61254.json").is_file()), None)
-    if credential_file is None:
-        raise FileNotFoundError("Firestore service account JSON not found. Keep it outside Git and configure GOOGLE_APPLICATION_CREDENTIALS, or place it in a local private location.")
-    cred = credentials.Certificate(str(credential_file))
-
+    cred = credentials.ApplicationDefault()
     firebase_admin.initialize_app(cred)
 
 

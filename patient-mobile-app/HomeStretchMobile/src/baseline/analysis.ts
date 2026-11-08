@@ -300,5 +300,5 @@ export function compare(analysis: Analysis, reference: Reference) {
     if (reference.version !== analysis.version)
         throw new Error('Baseline processing version does not match this recording.');
     return analysis.reps.map(rep => { if (!rep.eligible)
-        return { id: rep.id, assessable: false, flags: [] as Feature[] }; const values = withDirection(rep, reference.axis); return { id: rep.id, assessable: true, flags: FEATURES.filter(key => values[key] < reference.stats[key].lower || values[key] > reference.stats[key].upper) }; });
+        return { id: rep.id, assessable: false, metrics: null, flags: [] as Feature[] }; const values = withDirection(rep, reference.axis); return { id: rep.id, assessable: true, metrics: values, flags: FEATURES.filter(key => values[key] < reference.stats[key].lower || values[key] > reference.stats[key].upper) }; });
 }

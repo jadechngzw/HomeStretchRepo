@@ -1,7 +1,7 @@
 import { analyze, compare } from './analysis';
-import type { Analysis, Feature, Reference } from './analysis';
+import type { Analysis, Feature, Reference, Values } from './analysis';
 import type { Sample } from '../wearable/protocol';
-export type Assessment = { id: number; duration: number; end: number; assessable: boolean; flags: Feature[] };
+export type Assessment = { id: number; duration: number; end: number; assessable: boolean; flags: Feature[]; metrics?: Values | null };
 export type LiveResult = { reps: Assessment[]; stillness: boolean; placementWarning: boolean; unconfirmedFinal: boolean };
 export function paceCue(durations: number[]): 'slow' | 'fast' | 'steady' | 'waiting' {
   if (!durations.length) return 'waiting';

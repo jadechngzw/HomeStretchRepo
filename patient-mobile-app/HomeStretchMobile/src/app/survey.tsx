@@ -14,8 +14,10 @@ import {
 import Slider from "@react-native-community/slider";
 
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
-import { attachPostSurvey, saveSurvey } from "../baseline/store";
+import { Redirect, router, useLocalSearchParams } from "expo-router";
+import { saveDailySurvey, useCatalog } from "../baseline/store";
+import { useDailySurveys } from "../baseline/useDailySurveys";
+import { localDay } from "../baseline/dailySurveys";
 import { syncSessions } from "../sync/upload";
 import { Hint } from "../baseline/ui";
 
@@ -376,6 +378,10 @@ const painRegions: PainRegion[] = [
 export default function SurveyScreen() {
   const params = useLocalSearchParams<{ phase?: string; exerciseId?: string; returnTo?: string; sessionId?: string }>();
   const before = params.phase === "before";
+  const catalog = useCatalog();
+  const daily = useDailySurveys();
+  const [surveyDay] = useState(localDay);
+  const [patientId] = useState(catalog.data.patientProfile?.id ?? null);
   const [painAnswered, setPainAnswered] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -405,20 +411,28 @@ export default function SurveyScreen() {
     if (!painAnswered || saving) return;
     setSaving(true); setSaveError("");
     try {
-      const surveyId = await saveSurvey({ phase: before ? "before" : "after", exerciseId: params.exerciseId ?? null,
-        pain: painLevel, symptoms: symptoms === "Select One" ? "" : symptoms, regions: selectedPainRegions, notes });
+      const surveyId = await saveDailySurvey({ phase: before ? "before" : "after", exerciseId: params.exerciseId ?? null,
+        pain: painLevel, symptoms: symptoms === "Select One" ? "" : symptoms, regions: selectedPainRegions, notes }, surveyDay, patientId);
+      void syncSessions().catch(()=>{});
       if (before && params.returnTo === "baseline") {
         router.dismissTo({ pathname: "/baseline-setup", params: { exerciseId: params.exerciseId, surveyId } });
       } else if (before && params.exerciseId) {
         router.dismissTo({ pathname: "/exercise-detail", params: { id: params.exerciseId, surveyId } });
       } else {
-        if (!before && params.sessionId) { await attachPostSurvey(params.sessionId,surveyId); void syncSessions().catch(()=>{}); }
+        if (!before) void syncSessions().catch(()=>{});
         router.replace("/exercise");
       }
     } catch (e) { setSaveError(e instanceof Error ? e.message : "Could not save the survey. Please try again."); }
     finally { setSaving(false); }
   };
 
+  const completed = before ? daily.before : daily.after;
+  if (completed && !saving) {
+    if (before && params.returnTo === 'baseline') return <Redirect href={{ pathname: '/baseline-setup', params: { exerciseId: params.exerciseId, surveyId: completed.id } }} />;
+    if (before && params.exerciseId) return <Redirect href={{ pathname: '/exercise-detail', params: { id: params.exerciseId, surveyId: completed.id } }} />;
+    return <Redirect href="/exercise" />;
+  }
+  if (!before && catalog.ready && !daily.before) return <Redirect href="/exercise" />;
   return (
     <View style={styles.screen}>
       <View style={styles.screen}>
@@ -456,7 +470,7 @@ export default function SurveyScreen() {
         >
 
           {saveError ? <Hint error>{saveError}</Hint> : null}
-          <Text style={styles.helperText}>Saved on this device. Select your pain rating before continuing.</Text>
+          <Text style={styles.helperText}>{before ? "Complete this once before your first exercise today." : "Complete this when you have finished exercising today."}</Text>
           {/* ======================================= */}
           {/* SYMPTOMS */}
           {/* ======================================= */}
@@ -730,7 +744,7 @@ export default function SurveyScreen() {
               (!painAnswered || saving) && { opacity: 0.45 },
               pressed && styles.submitPressed,
             ]}
-            disabled={!painAnswered || saving}
+            disabled={!catalog.ready || !!catalog.error || !painAnswered || saving}
             accessibilityRole="button"
             accessibilityState={{ disabled: !painAnswered || saving, busy: saving }}
             onPress={() => void submitSurvey()}

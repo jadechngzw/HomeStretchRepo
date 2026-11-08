@@ -47,3 +47,67 @@ test('sessions persist through restart; post-survey updates cannot be acknowledg
  const restarted=harness(h.shared);await restarted.store.addExercise('Load');const row=restarted.store.getCatalog().data.sessionUploads[0];assert.equal(row.document.pain.after.pain,4);assert.equal(row.document.pain_level,4);
  await restarted.store.markUpload(doc.session_id,null,row.document);assert.equal(restarted.store.getCatalog().data.sessionUploads[0].status,'synced');
 });
+
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const dailyInput = (phase='before') => ({phase,exerciseId:'bicep-curls',pain:0,symptoms:'Staying the Same',regions:[],notes:'Original answers'});
+test('daily surveys are shared across exercises, deduplicated and retained after restart', async()=>{
+ const h=harness(),s=h.store;
+ const ids=await Promise.all([s.saveDailySurvey(dailyInput(),today(),null),s.saveDailySurvey({...dailyInput(),exerciseId:'shoulder-rolls'},today(),null)]);
+ assert.equal(ids[0],ids[1]);assert.equal(s.getCatalog().data.surveys.length,1);
+ const saved=s.getCatalog().data.surveys[0];assert.equal(saved.exerciseId,null);assert.equal(saved.pain,0);
+ const restarted=harness(h.shared);assert.equal(await restarted.store.saveDailySurvey(dailyInput(),today(),null),saved.id);
+ await s.savePatientProfile({id:'another',name:'Another Patient'});
+ await s.saveDailySurvey(dailyInput(),today(),'another');assert.equal(s.getCatalog().data.surveys.length,2);
+});
+test('daily survey rejects stale day or patient, missing pre-survey, and retries failed storage',async()=>{
+ const h=harness(),s=h.store;
+ await assert.rejects(s.saveDailySurvey(dailyInput(), '2000-01-01',null),/changed/);
+ await assert.rejects(s.saveDailySurvey(dailyInput(),today(),'wrong'),/changed/);
+ await assert.rejects(s.saveDailySurvey(dailyInput('after'),today(),null),/pre-exercise/);
+ h.shared.fail=true;await assert.rejects(s.saveDailySurvey(dailyInput(),today(),null),/Storage full/);
+ assert.equal(s.getCatalog().data.surveys.length,0);h.shared.fail=false;
+ await s.saveDailySurvey(dailyInput(),today(),null);assert.equal(s.getCatalog().data.surveys.length,1);
+});
+test('daily post-survey updates all of this patient’s exercises only for today',async()=>{
+ const h=harness(),s=h.store;await s.savePatientProfile({id:'p',name:'Patient'});
+ await s.saveDailySurvey(dailyInput(),today(),'p');
+ const doc={schema_version:2,exercise:{id:'bicep-curls',name:'Bicep Curls'},started_at:new Date().toISOString(),ended_at:new Date().toISOString(),num_reps:0,num_typical:0,num_atypical:0,num_unassessed:0,rep_assessments:[],patient:{id:'p',name:'Patient'},patient_id:'p',patient_name:'Patient',pain:{before:null,after:null},raw_file:null};
+ await s.saveSession({...doc,session_id:'first'});
+ await s.saveSession({...doc,session_id:'second',exercise:{id:'shoulder-rolls',name:'Shoulder Rolls'}});
+ await s.saveSession({...doc,session_id:'other-patient',patient_id:'other'});
+ await s.saveSession({...doc,session_id:'yesterday',ended_at:'2000-01-01T12:00:00Z'});
+ const id=await s.saveDailySurvey({...dailyInput('after'),pain:4},today(),'p');
+ const rows=s.getCatalog().data.sessionUploads;
+ assert.equal(rows[0].document.pain.after.id,id);assert.equal(rows[1].document.pain.after.id,id);
+ assert.equal(rows[2].document.pain.after,null);assert.equal(rows[3].document.pain.after,null);
+ assert.equal(await s.saveDailySurvey(dailyInput('after'),today(),'p'),id);
+});
+test('daily lookup resets at local midnight and ignores older exercise-specific surveys',()=>{
+ const source=readFileSync(new URL('../src/baseline/dailySurveys.ts',import.meta.url),'utf8');const exports={};
+ new Function('exports',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(exports);
+ const day=exports.localDay(new Date(2026,10,7,23,59));assert.equal(day,'2026-11-07');
+ const data={surveys:[{id:'old',phase:'before',recordedAt:new Date().toISOString()},{id:'daily',phase:'before',day,patientId:null}]};
+ assert.equal(exports.dailySurvey(data,'before',day).id,'daily');
+ assert.equal(exports.dailySurvey(data,'before',exports.localDay(new Date(2026,10,8,0,0))),undefined);
+});
+
+test('switching patient accounts isolates saved surveys and restores the right patient on return',async()=>{
+ const h=harness(),s=h.store;
+ await s.openPatientAccount({id:'a',name:'Patient A'});
+ await s.saveDailySurvey(dailyInput(),today(),'a');
+ await s.openPatientAccount({id:'b',name:'Patient B'});
+ assert.equal(s.getCatalog().data.surveys.length,0);
+ await s.saveDailySurvey(dailyInput(),today(),'b');
+ await s.openPatientAccount(null);assert.equal(s.getCatalog().data.surveys.length,0);
+ await s.openPatientAccount({id:'a',name:'Patient A'});
+ assert.equal(s.getCatalog().data.surveys.length,1);assert.equal(s.getCatalog().data.surveys[0].patientId,'a');
+});
+
+
+test('a late save from the previous account cannot enter the new patient catalog',async()=>{
+ const h=harness(),s=h.store;
+ await s.openPatientAccount({id:'b',name:'Patient B'});
+ const doc={schema_version:3,session_id:'old-a',exercise:{id:'x',name:'X'},started_at:'2026-11-07T12:00:00Z',ended_at:'2026-11-07T12:01:00Z',patient_id:'a',num_reps:0,num_typical:0,num_atypical:0,num_unassessed:0,rep_assessments:[]};
+ await assert.rejects(s.saveSession(doc),/account changed/);
+ assert.equal(s.getCatalog().data.sessionUploads,undefined);
+});

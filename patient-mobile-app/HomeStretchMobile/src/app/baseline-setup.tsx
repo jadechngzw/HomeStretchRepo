@@ -1,3 +1,4 @@
+import { useDailySurveys } from "../baseline/useDailySurveys";
 import { activeBaselines, isActive } from '../baseline/activation';
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
@@ -31,7 +32,7 @@ export default function BaselineSetup() {
     const operationLock = useRef(false);
     const mounted = useRef(true), initialized = useRef(false), finishTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const all = exercises(catalog.data), exercise = all.find(e => e.id === exerciseId);
-    const survey = catalog.data.surveys.find(s => s.id === params.surveyId && s.phase === 'before' && s.exerciseId === exerciseId);
+    const survey = useDailySurveys().before;
     useEffect(() => { if (!initialized.current && catalog.ready) {
         initialized.current = true;
         const previous = catalog.data.baselines.find(b => b.id === params.replaceId);
@@ -121,7 +122,7 @@ export default function BaselineSetup() {
   {step === 'prepare' && <>
    <Card><Text style={s.title}>{wearable.phase === 'connected' ? '● Watch connected' : 'Watch not connected'}</Text><Text style={s.small}>{wearable.message}</Text>{wearable.phase !== 'connected' && <Button title="Connect watch" secondary onPress={() => router.push('/settings')}/>}</Card>
    <Card><Text style={s.title}>Get into position</Text><Text style={s.text}>1. Watch on your {placement.wrist} wrist, face {placement.face === 'top' ? 'on top' : 'inside'}, snug.</Text><Text style={s.text}>2. {exerciseId === 'bicep-curls' ? 'Start with your arm relaxed at your side, palm forward.' : 'Use the starting position prescribed for this exercise.'}</Text><Text style={s.text}>3. Hold still for about 2 seconds before your first repetition. Return to the same starting position after each repetition.</Text>{!!placement.notes && <Text style={s.small}>{placement.notes}</Text>}</Card>
-   <Card><Text style={s.title}>Before you exercise</Text><Text style={s.text}>{survey ? `Pain rating recorded: ${survey.pain} / 10` : 'Please complete the pre-exercise survey, including your pain rating.'}</Text><Button title={survey ? 'Update pre-exercise survey' : 'Complete pre-exercise survey'} secondary onPress={() => router.push({ pathname: '/survey', params: { phase: 'before', exerciseId, returnTo: 'baseline' } })}/></Card>
+   <Card><Text style={s.title}>Before you exercise</Text><Text style={s.text}>{survey ? `Pain rating recorded: ${survey.pain} / 10` : 'Please complete the pre-exercise survey, including your pain rating.'}</Text>{!survey && <Button title='Pre-exercise survey' secondary onPress={() => router.push({ pathname: '/survey', params: { phase: 'before', exerciseId, returnTo: 'baseline' } })}/>}</Card>
    <Button title="Start baseline recording" disabled={wearable.phase !== 'connected' || !survey || busy} onPress={() => void run(start)}/>
   </>}
   {step === 'record' && <>

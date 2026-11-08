@@ -1,133 +1,50 @@
-import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  StyleSheet,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {styles} from '../components/authStyles';
+import React, {useState} from 'react';
+import {Text, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View, Image} from 'react-native';
+import {LinearGradient} from 'expo-linear-gradient';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification} from 'firebase/auth';
+import {auth} from '../firebase/config';
+import {rememberProfile, savePatientDetails} from '../firebase/patientProfile';
+import {formatBirthInput, profileFields} from '../firebase/profileValidation';
 
-import { auth } from "../firebase/config";
-
-/*
- * Patient sign-in. Accounts are created by the care team in the
- * Firebase console (Authentication -> Users); there is no self sign-up.
- * The account's uid is the patient_id used in Firestore.
- */
-export default function LoginScreen() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const signIn = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      // _layout.tsx redirects to the home screen once signed in.
-    } catch {
-      setError("Email or password is incorrect. Please check with your care team.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const disabled = busy || !email.trim() || !password;
-
-  return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <StatusBar style="dark" />
-      <Text style={styles.title}>HomeStretch</Text>
-      <Text style={styles.subtitle}>Sign in with the account from your care team</Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        autoCapitalize="none"
-        autoComplete="email"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        secureTextEntry
-        autoComplete="password"
-        value={password}
-        onChangeText={setPassword}
-        onSubmitEditing={() => { if (!disabled) void signIn(); }}
-      />
-
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      <Pressable
-        style={[styles.button, disabled && styles.buttonDisabled]}
-        onPress={signIn}
-        disabled={disabled}
-      >
-        {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Sign In</Text>}
-      </Pressable>
+export default function LoginScreen(){
+  const inset=useSafeAreaInsets();
+  const [creating,setCreating]=useState(false),[name,setName]=useState(''),[dob,setDob]=useState('');
+  const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  async function submit(){
+    if(busy)return;setError('');setBusy(true);
+    try{
+      if(creating){
+        profileFields(name,dob);
+        rememberProfile(name,dob);
+        const result=await createUserWithEmailAndPassword(auth,email.trim(),password);
+        await savePatientDetails(name,dob);
+        await sendEmailVerification(result.user);
+      }else await signInWithEmailAndPassword(auth,email.trim(),password);
+    }catch(e){
+      const code=(e as {code?:string}).code;
+      setError(code==='auth/email-already-in-use'?'An account already uses this email. Please sign in.':code==='auth/weak-password'?'Use a password with at least 6 characters.':code?'Could not sign in. Check your details and connection.':e instanceof Error?e.message:'Please try again.');
+    }finally{setBusy(false);}
+  }
+  const disabled=busy||!email.trim()||!password||(creating&&(!name.trim()||!dob));
+  return <LinearGradient colors={['#C4DCEF','#EFF6FB','#FFFFFF']} locations={[0,.55,1]} style={styles.screen}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS==='ios'?'padding':undefined}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content,{paddingTop:inset.top+32,paddingBottom:inset.bottom+24}]}>
+        <Image source={require('../../assets/images/logo-blue.png')} style={styles.logo} resizeMode="contain"/>
+        <Text style={styles.brand}>HomeStretch</Text>
+        <Text style={styles.title}>{creating?'Create your account':'Welcome back'}</Text>
+        <Text style={styles.subtitle}>{creating?'A few details to get started.':'Sign in to continue your exercises.'}</Text>
+        <View style={styles.form}>
+          {creating&&<><Text style={styles.label}>Full name</Text><TextInput accessibilityLabel="Full name" style={styles.input} value={name} onChangeText={setName} autoComplete="name" placeholder="Your full name" editable={!busy}/>
+          <Text style={styles.label}>Date of birth</Text><TextInput accessibilityLabel="Date of birth, month day year" style={styles.input} value={dob} onChangeText={v=>setDob(formatBirthInput(v))} placeholder="MM/DD/YYYY" keyboardType="number-pad" maxLength={10} editable={!busy}/></>}
+          <Text style={styles.label}>Email</Text><TextInput accessibilityLabel="Email" style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="you@example.com" editable={!busy}/>
+          <Text style={styles.label}>Password</Text><TextInput accessibilityLabel="Password" style={styles.input} value={password} onChangeText={setPassword} secureTextEntry autoComplete={creating?'new-password':'current-password'} placeholder={creating?'At least 6 characters':'Your password'} editable={!busy} onSubmitEditing={()=>{if(!disabled)void submit();}}/>
+          {!!error&&<Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
+          <Pressable accessibilityRole="button" disabled={disabled} style={[styles.button,disabled&&{opacity:.5}]} onPress={()=>void submit()}>{busy?<ActivityIndicator color="#367FBD"/>:<Text style={styles.buttonText}>{creating?'Create account':'Sign in'}</Text>}</Pressable>
+          <Pressable accessibilityRole="button" disabled={busy} style={styles.link} onPress={()=>{setCreating(!creating);setError('');}}><Text style={styles.linkText}>{creating?'Already have an account? Sign in':'New to HomeStretch? Create an account'}</Text></Pressable>
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
-  );
+  </LinearGradient>;
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 28,
-    backgroundColor: "#FFFFFF",
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: "700",
-    color: "#1D4E89",
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: 17,
-    color: "#555555",
-    textAlign: "center",
-    marginTop: 8,
-    marginBottom: 32,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#C9D3DF",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 18,
-    marginBottom: 14,
-  },
-  error: {
-    color: "#B3261E",
-    fontSize: 15,
-    marginBottom: 12,
-  },
-  button: {
-    backgroundColor: "#1D4E89",
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 6,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 19,
-    fontWeight: "600",
-  },
-});

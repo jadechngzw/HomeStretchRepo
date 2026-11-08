@@ -1,3 +1,4 @@
+import { dailySurvey, localDay } from './dailySurveys';
 import { validateSession } from '../sync/schema';
 import type { PatientProfile, SessionDocument } from '../sync/schema';
 import { useSyncExternalStore } from 'react';
@@ -9,7 +10,7 @@ import type { Analysis } from './analysis';
 import type { Sample } from '../wearable/protocol';
 import { DEFAULT_EXERCISES, uid } from './types';
 import type { Baseline, Catalog, Placement, Survey } from './types';
-const pointerKey = 'HomeStretchBaselineCatalogV1';
+let pointerKey = 'HomeStretchBaselineCatalogV1';
 const folder = FS.documentDirectory ? `${FS.documentDirectory}exercise-baselines/` : '';
 const empty = (): Catalog => ({ version: 1, customExercises: [], baselines: [], surveys: [] });
 let snapshot: {
@@ -72,6 +73,24 @@ function change<T>(fn: (data: Catalog) => Promise<{
     queue = task.catch(() => { });
     return task;
 }
+export async function openPatientAccount(profile: PatientProfile | null) {
+  const task = queue.then(async () => {
+    await loading;
+    snapshot = { ready: false, error: null, data: empty() }; emit();
+    pointerKey = 'HomeStretchBaselineCatalogV1:' + (profile?.id ?? 'signed-out');
+    try {
+      const pointer = profile ? getPointer() : null;
+      const content = pointer ? await read(pointer) : null;
+      const data: Catalog = content ? JSON.parse(content) : empty();
+      if (data.version !== 1 || !Array.isArray(data.baselines) || !Array.isArray(data.surveys)) throw new Error('Saved records could not be read.');
+      snapshot = { ready: true, error: null, data: { ...autoApprove(data), patientProfile: profile ?? undefined } };
+    } catch (e) { snapshot = {ready:true,error:e instanceof Error?e.message:'Could not open patient records.',data:empty()}; }
+    emit();
+  });
+  queue = task.catch(() => {});
+  return task;
+}
+
 export function useCatalog() { return useSyncExternalStore(subscribe, () => snapshot, () => snapshot); }
 export const exercises = (data: Catalog) => [...DEFAULT_EXERCISES, ...data.customExercises];
 export const getCatalog = () => snapshot;
@@ -80,6 +99,33 @@ export async function addExercise(name: string) { return change(async (data) => 
     return { data, result: existing.id }; const exercise = { id: `custom-${uid()}`, name: cleaned, sets: 1, reps: 10, duration: 'Your pace', instructions: 'Follow your prescribed routine', custom: true }; return { data: { ...data, customExercises: [...data.customExercises, exercise] }, result: exercise.id }; }); }
 export async function saveSurvey(survey: Omit<Survey, 'id' | 'recordedAt'>) { return change(async (data) => { if (!Number.isInteger(survey.pain) || survey.pain < 0 || survey.pain > 10)
     throw new Error('Select a pain rating from 0 to 10.'); const record = { ...survey, id: uid(), recordedAt: new Date().toISOString() }; return { data: { ...data, surveys: [...data.surveys, record] }, result: record.id }; }); }
+// Save the daily answer and its session links in one catalog revision.
+export async function markSurveySynced(id: string) {
+  return change(async data => ({data:{...data,surveys:data.surveys.map(s=>s.id===id?{...s,syncedAt:new Date().toISOString()}:s)},result:undefined}));
+}
+export async function saveDailySurvey(input: Omit<Survey, 'id' | 'recordedAt' | 'day' | 'patientId'>, expectedDay: string, expectedPatient: string | null) {
+  return change(async data => {
+    const day = localDay();
+    const patientId = data.patientProfile?.id ?? null;
+    if (day !== expectedDay || patientId !== expectedPatient)
+      throw new Error('The day or patient has changed. Please reopen the survey.');
+    const existing = dailySurvey(data, input.phase, day);
+    if (existing) return { data, result: existing.id };
+    if (!Number.isInteger(input.pain) || input.pain < 0 || input.pain > 10)
+      throw new Error('Select a pain rating from 0 to 10.');
+    if (input.phase === 'after' && !dailySurvey(data, 'before', day))
+      throw new Error('Complete today’s pre-exercise survey first.');
+    const record: Survey = { ...input, exerciseId: null, id: `${patientId}_${day}_${input.phase}`, recordedAt: new Date().toISOString(), day, patientId };
+    const sessionUploads = (data.sessionUploads ?? []).map(entry => {
+      const doc = entry.document;
+      if (input.phase !== 'after' || (doc.patient_id ?? null) !== patientId ||
+          localDay(new Date(doc.ended_at)) !== day || doc.ended_at > record.recordedAt) return entry;
+      return { ...entry, status: 'pending' as const, lastError: null,
+        document: { ...doc, pain: { ...doc.pain, after: record }, pain_level: record.pain } };
+    });
+    return { data: { ...data, surveys: [...data.surveys, record], sessionUploads }, result: record.id };
+  });
+}
 export async function saveBaseline(input: {
     exerciseId: string;
     placement: Placement;
@@ -96,7 +142,7 @@ export async function saveBaseline(input: {
             throw new Error('An interrupted or incomplete recording cannot be saved as a baseline.');
         if (!exercises(data).some(e => e.id === input.exerciseId))
             throw new Error('Exercise was not found.');
-        const survey = data.surveys.find(s => s.id === input.surveyId && s.phase === 'before' && s.exerciseId === input.exerciseId);
+        const survey = data.surveys.find(s => s.id === input.surveyId && s.phase === 'before' && (s.day ? s.id === dailySurvey(data, 'before')?.id : s.exerciseId === input.exerciseId));
         if (!survey)
             throw new Error('Complete the pre-exercise survey before recording.');
         const reference = buildReference(input.analysis, input.ids), id = uid(), rawFile = `recording-${id}.json`;
@@ -118,6 +164,7 @@ export async function savePatientProfile(profile: PatientProfile) {
 export async function saveSession(document: SessionDocument, frames?: Sample[]) {
   validateSession(document);
   return change(async data => {
+    if(pointerKey.includes(':') && (!data.patientProfile || document.patient_id !== data.patientProfile.id)) throw new Error('The patient account changed before the recording was saved.');
     if((data.sessionUploads??[]).some(s=>s.document.session_id===document.session_id))return {data,result:document.session_id};
     let rawFile:string|null=null;
     if(frames?.length){rawFile=`session-${document.session_id}.json`;await write(rawFile,JSON.stringify({schema_version:2,session_id:document.session_id,frames}));}

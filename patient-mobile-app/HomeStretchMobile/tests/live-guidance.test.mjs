@@ -49,3 +49,8 @@ test('legacy live-guidance hook recovers pace and resets on session ID changes',
  onRep({count:10,durationSec:2});assert.equal(state.state,'EXERCISING');assert.match(state.message,/Target reached/);
  snapshot={sessionId:2,phase:'ended'};onState();assert.equal(state.state,'IDLE_POST');cleanup();
 });
+
+test('saved graph metrics are the exact baseline-relative values used for classification',()=>{
+ const r=assessAnalysis(analysis,reference);
+ for(const row of r.reps){assert.ok(row.metrics);assert.deepEqual(row.flags,Object.keys(reference.stats).filter(key=>row.metrics[key]<reference.stats[key].lower||row.metrics[key]>reference.stats[key].upper));}
+});

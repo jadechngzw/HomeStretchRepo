@@ -1,3 +1,4 @@
+import { auth } from '../firebase/config';
 import React from "react";
 import SettingsButton from "../components/SettingsButton";
 
@@ -36,11 +37,11 @@ export default function HomeScreen() {
 
           <View style={styles.greetingContainer}>
             <Text style={styles.greeting}>
-              Good Morning
+              {new Date().getHours()<12?'Good morning':new Date().getHours()<18?'Good afternoon':'Good evening'}
             </Text>
 
             <Text style={styles.name}>
-              Jane!
+              {auth.currentUser?.displayName || "HomeStretch"}
             </Text>
           </View>
 
@@ -51,11 +52,11 @@ export default function HomeScreen() {
         <View style={styles.middleSection}>
 
           <Text style={styles.goalTitle}>
-            Today’s Goal:
+            Today’s exercises
           </Text>
 
           <Text style={styles.goalText}>
-            30 minutes + 5 exercises
+            Follow the routine agreed with your care team.
           </Text>
 
         </View>

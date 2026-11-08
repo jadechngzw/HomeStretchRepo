@@ -18,6 +18,9 @@ export type Exercise = {
     custom?: boolean;
 };
 export type Survey = {
+    syncedAt?: string;
+    day?: string;
+    patientId?: string | null;
     id: string;
     phase: 'before' | 'after';
     exerciseId: string | null;
