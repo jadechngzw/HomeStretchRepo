@@ -57,7 +57,7 @@ class UITests(unittest.TestCase):
         from streamlit.testing.v1 import AppTest
         page=AppTest.from_file(str(Path(__file__).with_name('clinician_app.py'))).run()
         self.assertFalse(page.exception)
-        self.assertEqual(page.subheader[0].value,'Clinician sign in')
+        self.assertEqual([t.label for t in page.text_input],['Email','Password'])
     def test_set_checkboxes_select_all_and_individual(self):
         from streamlit.testing.v1 import AppTest
         page=AppTest.from_file(str(Path(__file__).with_name('clinician_app.py')),default_timeout=30)
