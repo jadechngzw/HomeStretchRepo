@@ -1,11 +1,13 @@
 """HomeStretch clinician app: roster, invitations, messages and bicep-curl progress.
 
-Layout follows the HomeStretch clinician designs (blue banner headers, white cards,
-roster rows, profile banner with tabs, two-pane messages). All data comes from
-clinician_backend, which only returns records of actively linked patients.
+Styled after the original HomeStretch Figma clinician dashboard: light-blue title bar,
+a plain text navigation row, flat pale-blue panels and soft status pills. All data comes
+from clinician_backend, which only returns records of actively linked patients.
 """
+import base64
 import html
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 import pandas as pd
 import altair as alt
@@ -14,55 +16,130 @@ import clinician_backend as backend
 from clinician_charts import (METRICS, metric_frame, exercise_of, is_bicep_curl, recording_time,
                               session_trend_frame, rep_duration_frame, metric_trend_frame, metric_by_rep_frame)
 
-st.set_page_config(page_title='HomeStretch | Clinician', page_icon='🏠', layout='wide')
+ASSETS = Path(__file__).parent / 'assets'
+
+
+def logo_uri(variant='blue'):
+    """Logo as a data URI so it can be placed inside custom HTML (blue on light, white on blue)."""
+    data = (ASSETS / f'logo-{variant}.png').read_bytes()
+    return 'data:image/png;base64,' + base64.b64encode(data).decode()
+
+
+st.set_page_config(page_title='HomeStretch | Clinician', page_icon=str(ASSETS / 'logo-blue.png'), layout='wide')
 st.markdown("""<style>
-:root {--hs-navy:#174B78;--hs-blue:#2C6FAD;--hs-line:#B7D0E5;--hs-ink:#253746;--hs-muted:#5F7A90;}
-[data-testid="stAppViewContainer"] {background:linear-gradient(180deg,#F5F9FD 0%,#FFFFFF 55%);color:var(--hs-ink);}
-.block-container {max-width:1320px;padding-top:3.2rem;}
-h1,h2,h3 {color:var(--hs-navy)!important;}
-[data-testid="stSidebar"] {background:#DCEBF6;}
-.hs-banner {background:#C4DCEF;padding:22px 28px;border-radius:16px;margin-bottom:20px;}
-.hs-banner h1 {margin:0;color:#285F91!important;font-size:30px;font-weight:650;padding:0;}
-.hs-banner p {margin:6px 0 0;color:#527D9F;font-size:14px;}
-.hs-section {font-size:1.12rem;font-weight:720;color:var(--hs-navy);margin:4px 0 10px;letter-spacing:-.01em;}
-.hs-chip {display:inline-block;padding:2px 10px;border-radius:999px;font-size:.8rem;font-weight:650;border:1px solid;}
-.hs-chip.active {background:#E3F2EA;color:#2F6B53;border-color:#B9DCC8;}
-.hs-chip.review {background:#FBEDEE;color:#9B3640;border-color:#EDC3C7;}
-.hs-chip.idle {background:#EEF1F4;color:#5B6875;border-color:#D3DAE1;}
-.hs-chip.pending {background:#FFF5DF;color:#8A5B00;border-color:#F0D9A6;}
-.hs-chip.new {background:#E6F0F8;color:#285F91;border-color:#BBD5E9;}
+:root {--hs-bar:#BED0E5;--hs-blue:#4B78AF;--hs-brand:#3C79B4;--hs-ink:#2E3A46;--hs-muted:#6B7C8E;
+       --hs-panel:#EEF3F9;--hs-line:#D5E0EC;--hs-btn:#D8E3F0;}
+[data-testid="stAppViewContainer"] {background:#FFFFFF;color:var(--hs-ink);}
+[data-testid="stHeader"] {background:transparent;}
+[data-testid="stSidebar"],[data-testid="stSidebarCollapsedControl"] {display:none;}
+.block-container {max-width:1280px;padding-top:0;padding-bottom:3rem;}
+h1,h2,h3 {color:var(--hs-ink)!important;font-weight:600!important;letter-spacing:0;}
+
+/* Title bar: full-width light blue, title centred, logo + wordmark on the left. */
+.hs-topbar {position:relative;background:var(--hs-bar);margin:-1rem calc(50% - 50vw) 0;height:64px;display:flex;align-items:center;justify-content:center;}
+.hs-topbar .hs-title {color:var(--hs-blue);font-size:1.25rem;font-weight:500;}
+.hs-brand {display:flex;align-items:center;gap:10px;}
+.hs-topbar .hs-brand {position:absolute;left:max(24px, calc(50vw - 640px + 1rem));}
+.hs-brand img {width:30px;height:30px;}
+.hs-brand span {color:var(--hs-brand);font-size:1.05rem;font-weight:600;}
+.hs-intro {color:var(--hs-muted);font-size:.9rem;margin:2px 0 18px;}
+@media(max-width:760px){.hs-topbar .hs-brand span{display:none}.hs-topbar .hs-title{font-size:1.1rem}}
+
+/* Navigation row: plain text links, active one underlined. */
+.st-key-hs_navrow {border-bottom:1px solid var(--hs-line);padding:6px 0 0;margin-bottom:10px;}
+.st-key-hs_nav [role="radiogroup"] {gap:28px;flex-wrap:wrap;}
+.st-key-hs_nav label:has(input[type="radio"]) {margin:0;padding:6px 0 8px;border-bottom:2px solid transparent;cursor:pointer;}
+.st-key-hs_nav label[data-baseweb="radio"] > div:first-child,
+.st-key-hs_nav label[data-testid="stRadioOption"] > div > div:first-child:not([data-testid]) {display:none;}
+.st-key-hs_nav label:has(input[type="radio"]) p {color:var(--hs-muted);font-size:.95rem;}
+.st-key-hs_nav label:has(input:checked) {border-bottom-color:var(--hs-blue);}
+.st-key-hs_nav label:has(input:checked) p {color:var(--hs-blue);font-weight:600;}
+
+.hs-section {font-size:.95rem;font-weight:600;color:var(--hs-blue);margin:0 0 8px;}
 .hs-marker {display:none;}
-[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-white-card),[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-white-card) {background:linear-gradient(145deg,#FFFFFF 68%,#F7FBFF 100%);border:1.5px solid var(--hs-line)!important;border-radius:17px!important;padding:16px 20px!important;box-shadow:0 4px 15px rgba(28,77,116,.06);}
-[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-white-card),[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-white-card) .hs-section,[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-white-card) .hs-section {border-left:4px solid #317DB8;padding-left:12px;}
-[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-row),[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-row) {background:#E6F2FB;border:1px solid #C9E0F0!important;border-radius:13px!important;padding:4px 12px!important;}
-[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-profile-banner),[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-profile-banner) {background:linear-gradient(105deg,#D9EBFA 0%,#E9F4FD 60%,#F7FBFF 100%);border:1.5px solid #B4D2E9!important;border-radius:17px!important;padding:16px 24px!important;}
-[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-profile-banner),[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-profile-banner) h3 {font-size:1.6rem!important;font-weight:750!important;}
-[data-testid="stMetric"] {background:linear-gradient(135deg,#E7F3FE,#F3F9FE);border:1.5px solid #C0DAEE;border-radius:15px;padding:14px 18px;}
-[data-testid="stMetricValue"] {color:#1C5E96;font-weight:750;}
-[data-testid="stMetricLabel"] {color:#486B88;font-weight:600;}
-.stTabs [role="tablist"] {background:#EAF3FB;border:1.5px solid #BBD5EA;border-radius:14px;padding:6px;gap:8px;}
-.stTabs [role="tab"] {background:#F9FCFF;border:1.5px solid #BBD5EA;border-radius:11px;color:#1C5485!important;font-weight:700;min-height:48px;padding:6px 18px;}
-.stTabs [role="tab"][aria-selected="true"] {background:linear-gradient(110deg,#286DAA,#1A568F)!important;color:#FFFFFF!important;border-color:#1A568F!important;}
-.stTabs [role="tab"][aria-selected="true"] p {color:#FFFFFF!important;}
-.stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"] {display:none;}
-.stButton>button,.stFormSubmitButton>button {border-radius:11px;border:1.5px solid #A9CBE4;color:#205E96;font-weight:650;}
-.stButton>button[kind="primary"],.stFormSubmitButton>button[kind="primary"],[data-testid="stBaseButton-primary"],[data-testid="stBaseButton-primaryFormSubmit"] {background:#367FBD;color:#FFFFFF!important;border-color:#367FBD;}
-[data-testid="stBaseButton-primary"] p,[data-testid="stBaseButton-primaryFormSubmit"] p,button[kind="primary"] p {color:#FFFFFF!important;}
-[data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea {background:#FFFFFF;border-radius:10px;}
-[data-testid="stForm"] {background:rgba(255,255,255,.85);border:1.5px solid #C4DCEF;border-radius:17px;padding:20px;}
-[data-testid="stChatMessage"] {background:#E6F0F8;border-radius:16px;}
-[data-testid="stExpander"] {border:1.5px solid #C2D9EA;border-radius:12px;}
-@media(max-width:700px){.hs-banner{padding:16px 18px}.hs-banner h1{font-size:24px}}
+[data-testid="stElementContainer"]:has(> div > [data-testid="stMarkdownContainer"] .hs-marker),[data-testid="stElementContainer"]:has(.hs-marker) {display:none;}
+.hs-chip {display:inline-block;padding:2px 10px;border-radius:4px;font-size:.78rem;font-weight:500;color:#2E3A46;}
+.hs-chip.active {background:#B9DDBD;}
+.hs-chip.review {background:#F2B6B3;}
+.hs-chip.idle {background:#E3E7EC;color:#56616D;}
+.hs-chip.pending {background:#F6DE9A;}
+.hs-chip.new {background:var(--hs-btn);color:#34598A;}
+
+/* Flat panels instead of shadowed cards. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-white-card),[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-white-card) {background:var(--hs-panel);border:none!important;border-radius:6px!important;padding:14px 18px!important;}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-row),[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-row) {background:#FFFFFF;border:none!important;border-bottom:1px solid var(--hs-line)!important;border-radius:0!important;padding:2px 4px!important;}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.hs-profile-banner),[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .hs-profile-banner) {background:#FFFFFF;border:none!important;border-bottom:1px solid var(--hs-line)!important;border-radius:0!important;padding:4px 0 10px!important;}
+.st-key-hs_chatlist button {justify-content:flex-start;text-align:left;}
+.st-key-hs_chatlist button > div {justify-content:flex-start;}
+.hs-avatar {width:52px;height:52px;border-radius:50%;background:#E3E7EC;display:flex;align-items:center;justify-content:center;color:#6B7C8E;font-weight:600;font-size:1.05rem;}
+.hs-table-head p {color:var(--hs-muted)!important;font-size:.82rem;font-weight:500;}
+
+/* Summary figures: number beside its label, like the Figma dashboard. */
+.hs-kpis {display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:4px 0 18px;}
+.hs-kpi {background:var(--hs-panel);border-radius:6px;padding:12px 16px;display:flex;align-items:center;gap:12px;}
+.hs-kpi b {color:var(--hs-blue);font-size:1.5rem;font-weight:500;line-height:1;}
+.hs-kpi span {color:var(--hs-ink);font-size:.82rem;line-height:1.25;}
+
+/* Tabs: plain text with an underline. */
+.stTabs [role="tablist"] {gap:28px;border-bottom:1px solid var(--hs-line);}
+.stTabs [role="tab"] {padding:6px 0;}
+.stTabs [role="tab"] p {color:var(--hs-muted);font-size:.92rem;}
+.stTabs [role="tab"][aria-selected="true"] p {color:var(--hs-blue);font-weight:600;}
+.stTabs [data-baseweb="tab-highlight"] {background:var(--hs-blue);}
+.stTabs [data-baseweb="tab-border"] {display:none;}
+
+/* Buttons and inputs: flat, small radius, muted blue. */
+.stButton>button,.stFormSubmitButton>button,[data-testid="stPopover"] button {border-radius:4px;border:1px solid var(--hs-line);background:#FFFFFF;color:#34598A;font-weight:500;box-shadow:none;}
+.stButton>button:hover,.stFormSubmitButton>button:hover {border-color:var(--hs-bar);background:var(--hs-panel);color:#34598A;}
+.stButton>button[kind^="primary"],.stFormSubmitButton>button[kind^="primary"] {background:var(--hs-bar)!important;border-color:var(--hs-bar)!important;color:#2F5687!important;}
+.stButton>button[kind^="primary"]:hover,.stFormSubmitButton>button[kind^="primary"]:hover {background:#ADC4DE!important;border-color:#ADC4DE!important;}
+.stButton>button[kind="tertiary"] {border:none;background:transparent;padding-left:0;}
+[data-testid="stBaseButton-primary"] p,[data-testid="stBaseButton-primaryFormSubmit"] p,button[kind="primary"] p {color:#2F5687!important;}
+[data-testid="stTextInput"] input,[data-testid="stTextArea"] textarea {background:#FFFFFF;}
+[data-testid="stTextInput"] [data-baseweb="input"],[data-testid="stTextArea"] [data-baseweb="textarea"],[data-baseweb="select"]>div {border-radius:4px;border-color:var(--hs-line);background:#FFFFFF;}
+[data-testid="stForm"] {background:transparent;border:none;padding:0;}
+[data-testid="stProgressBarTrack"] {background:#E3E7EC;}
+[data-testid="stProgressBarTrack"] > div {background:#9CC9A2;}
+[data-testid="stChatMessage"] {background:#FFFFFF;border-radius:6px;}
+[data-testid="stExpander"] details {border:1px solid var(--hs-line);border-radius:4px;}
+[data-testid="stAlert"] > div {border-radius:4px;}
+
+/* Sign-in page: pale panel under a "Login" bar, logo + wordmark centred. */
+.hs-login-brand {display:flex;flex-direction:column;align-items:center;gap:10px;margin:44px 0 8px;}
+.hs-login-brand img {width:64px;height:64px;}
+.hs-login-brand span {color:var(--hs-brand);font-size:1.6rem;font-weight:600;}
+.hs-login-brand small {color:var(--hs-muted);font-size:.9rem;}
+.st-key-hs_login {background:var(--hs-panel);border-radius:6px;padding:8px 28px 24px;margin-top:28px;}
 </style>""", unsafe_allow_html=True)
 
-# Colors: typical (blue), outside baseline (reserved red, always labelled), unassessed (gray).
+# Colors: typical (muted blue), outside baseline (soft red, always labelled), unassessed (gray).
 CLASS_DOMAIN = ['Typical', 'Outside baseline', 'Unassessed']
-CLASS_RANGE = ['#367FBD', '#C24C54', '#9AA6B2']
+CLASS_RANGE = ['#8FB0D6', '#D9787A', '#C9D1DA']
 RECENT_DAYS = 7
 
 
-def banner(title, subtitle=''):
-    st.markdown(f'<div class="hs-banner"><h1>{html.escape(title)}</h1><p>{html.escape(subtitle)}</p></div>', unsafe_allow_html=True)
+def chart_style(chart):
+    """Flat Altair styling that matches the panels: light grid, no frame, muted labels."""
+    return (chart.configure(background='transparent', font='sans-serif')
+            .configure_view(stroke=None)
+            .configure_axis(gridColor='#DCE4EE', domainColor='#C3CFDC', tickColor='#C3CFDC', labelColor='#5F6F80', titleColor='#5F6F80', titleFontWeight='normal', labelFontSize=11, titleFontSize=11)
+            .configure_legend(labelColor='#3F4C59', labelFontSize=11, symbolType='square')
+            .configure_title(color='#4B78AF', fontWeight='normal', fontSize=13, anchor='start'))
+
+
+def top_bar():
+    brand = f'<div class="hs-brand"><img src="{logo_uri()}" alt=""><span>HomeStretch</span></div>'
+    st.markdown(f'<div class="hs-topbar">{brand}</div>', unsafe_allow_html=True)
+
+
+def banner(subtitle=''):
+    """Short line under the navigation; the page name itself sits in the title bar."""
+    if subtitle: st.markdown(f'<p class="hs-intro">{html.escape(subtitle)}</p>', unsafe_allow_html=True)
+
+
+def kpis(items):
+    cells = ''.join(f'<div class="hs-kpi"><b>{html.escape(str(value))}</b><span>{html.escape(label)}</span></div>' for value, label in items)
+    st.markdown(f'<div class="hs-kpis">{cells}</div>', unsafe_allow_html=True)
 
 
 def card(marker='hs-white-card'):
@@ -77,6 +154,11 @@ def section(title):
 
 def chip(text, kind):
     return f'<span class="hs-chip {kind}">{html.escape(text)}</span>'
+
+
+def initials(name):
+    parts = [p for p in str(name).split() if p]
+    return ''.join(p[0] for p in parts[:2]).upper() or 'P'
 
 
 def fmt_time(value, with_time=True):
@@ -121,21 +203,26 @@ def go(view_name, **state):
 
 # ---------------------------------------------------------------- sign in
 if not st.session_state.get('clinician_token'):
-    _, center, _ = st.columns([1, 1.25, 1])
+    st.markdown('<div class="hs-topbar"><div class="hs-title">Clinician Login</div></div>', unsafe_allow_html=True)
+    _, center, _ = st.columns([1, 1.1, 1])
     with center:
-        st.markdown('<div class="hs-banner" style="text-align:center"><h1>HomeStretch</h1><p>Clinician portal</p></div>', unsafe_allow_html=True)
-        st.subheader('Clinician sign in')
-        st.caption('Welcome back. Sign in to view your patients.')
-        with st.form('sign_in', clear_on_submit=True):
-            email = st.text_input('Email')
-            password = st.text_input('Password', type='password')
-            submitted = st.form_submit_button('Sign in', type='primary', width='stretch')
+        with st.container(key='hs_login'):
+            st.markdown(f'<div class="hs-login-brand"><img src="{logo_uri()}" alt="HomeStretch logo"><span>HomeStretch</span>'
+                        '<small>Clinician portal</small></div>', unsafe_allow_html=True)
+            with st.form('sign_in', clear_on_submit=True):
+                email = st.text_input('Email')
+                password = st.text_input('Password', type='password')
+                submitted = st.form_submit_button('Sign in', type='primary', width='stretch')
     if submitted:
         try:
             st.session_state.clinician_token = backend.sign_in(email, password)
             st.rerun()
+        except PermissionError as error:
+            # Wrong email/password, or the account has no clinician role.
+            with center: st.error(str(error))
         except Exception:
-            st.error('Could not sign in. Check your account details, clinician access, and server credentials.')
+            with center: st.error('The server could not reach Firebase. In the terminal that runs Streamlit, set '
+                                  'GOOGLE_APPLICATION_CREDENTIALS to the Firebase Admin key file, then restart the app.')
     st.stop()
 
 token = st.session_state.clinician_token
@@ -146,17 +233,19 @@ except Exception:
     st.info('Please sign in again. Your session may have expired or access may have changed.')
     st.stop()
 
-# ---------------------------------------------------------------- sidebar
+# ---------------------------------------------------------------- title bar + navigation
 VIEWS = ['Patients', 'Invite patients', 'Messages']
 st.session_state.setdefault('view', 'Patients')
 if 'nav_request' in st.session_state: st.session_state.view = st.session_state.pop('nav_request')
-with st.sidebar:
-    st.markdown(f"### {html.escape(profile.get('display_name', 'Clinician'))}")
-    st.caption('HomeStretch clinician')
-    view = st.radio('Navigate', VIEWS, key='view', label_visibility='collapsed')
-    st.divider()
-    st.button('Refresh data', width='stretch')
-    with st.expander('Your profile'):
+top_bar()
+clinician_name = profile.get('display_name') or 'Clinician'
+with st.container(key='hs_navrow'):
+    nav_col, refresh_col, account_col = st.columns([6, 1.1, 1.9], vertical_alignment='center')
+    with nav_col, st.container(key='hs_nav'):
+        view = st.radio('Navigate', VIEWS, key='view', horizontal=True, label_visibility='collapsed')
+    refresh_col.button('Refresh', icon=':material/refresh:', width='stretch')
+    with account_col.popover(clinician_name, icon=':material/account_circle:', width='stretch'):
+        st.caption('Signed in as a HomeStretch clinician')
         with st.form('clinician_profile'):
             display_name = st.text_input('Full name', value=profile.get('display_name', ''))
             save_profile = st.form_submit_button('Save name')
@@ -168,7 +257,7 @@ with st.sidebar:
                 st.error(str(error))
             except Exception:
                 st.error('Could not save your name. Please try again.')
-    st.button('Sign out', on_click=sign_out, width='stretch')
+        st.button('Sign out', on_click=sign_out, width='stretch')
 
 
 def load_sessions(patient_id):
@@ -215,8 +304,8 @@ def duration_chart(recordings):
     x = alt.X('set:O', sort=order, title=None, axis=alt.Axis(labelAngle=-35, labelLimit=140))
     tooltip = [alt.Tooltip('set:O', title='Set'), alt.Tooltip('mean:Q', title='Mean (s)', format='.2f'),
                alt.Tooltip('min:Q', title='Fastest (s)', format='.2f'), alt.Tooltip('max:Q', title='Slowest (s)', format='.2f'), alt.Tooltip('reps:Q', title='Timed reps')]
-    rng = alt.Chart(frame).mark_rule(color='#9DC2E2', strokeWidth=6, opacity=.6).encode(x=x, y=alt.Y('min:Q', title='Seconds per rep', scale=alt.Scale(zero=False)), y2='max:Q', tooltip=tooltip)
-    line = alt.Chart(frame).mark_line(color='#2C6FAD', strokeWidth=2, point=alt.OverlayMarkDef(size=70, filled=True, color='#2C6FAD')).encode(x=x, y='mean:Q', tooltip=tooltip)
+    rng = alt.Chart(frame).mark_rule(color='#BED0E5', strokeWidth=6).encode(x=x, y=alt.Y('min:Q', title='Seconds per rep', scale=alt.Scale(zero=False)), y2='max:Q', tooltip=tooltip)
+    line = alt.Chart(frame).mark_line(color='#4B78AF', strokeWidth=2, point=alt.OverlayMarkDef(size=55, filled=True, color='#4B78AF')).encode(x=x, y='mean:Q', tooltip=tooltip)
     return (rng + line).properties(height=280)
 
 
@@ -239,7 +328,7 @@ def metric_trend_chart(recordings, key, shown=None):
     frame['set'] = frame['session'].map(labels)
     if shown is not None: frame = frame[frame['set'].isin(shown)]
     if frame.empty: return None
-    palette = ['#2C6FAD', '#8EC3F0', '#E0413A', '#F2A8A3', '#45A08A', '#9FD8C6', '#E3A33B', '#F4D27F', '#7A5CC2', '#C3B1EC']
+    palette = ['#4B78AF', '#9DB9DA', '#C8615F', '#E6A9A4', '#5E9A72', '#A9D0B1', '#C99A3E', '#E9CF8C', '#7C6BA8', '#C2B7DA']
     colors = alt.Scale(domain=order, range=[palette[i % len(palette)] for i in range(len(order))])
     tooltip = [alt.Tooltip('set:N', title='Set'), alt.Tooltip('rep:O', title='Rep'), alt.Tooltip('value:Q', title=METRICS[key], format='.3f')]
     return alt.Chart(frame).mark_line(point=alt.OverlayMarkDef(size=55, filled=True)).encode(
@@ -277,13 +366,13 @@ def per_rep_chart(recording, key, title):
     if not values: return None
     frame = pd.DataFrame(values)
     base = alt.Chart(frame).encode(x=alt.X('rep:Q', title='Repetition', axis=alt.Axis(tickMinStep=1)), y=alt.Y('value:Q', title=title, scale=alt.Scale(zero=False)))
-    chart = base.mark_line(color='#CBD5E1') + base.mark_circle(size=70).encode(
-        color=alt.Color('status:N', scale=alt.Scale(domain=['Within baseline', 'Outside baseline', 'No baseline'], range=['#367FBD', '#C24C54', '#7A8694']), legend=alt.Legend(title=None, orient='top')),
+    chart = base.mark_line(color='#C9D3DE') + base.mark_circle(size=70).encode(
+        color=alt.Color('status:N', scale=alt.Scale(domain=['Within baseline', 'Outside baseline', 'No baseline'], range=['#4B78AF', '#C8615F', '#8C97A3']), legend=alt.Legend(title=None, orient='top')),
         tooltip=[alt.Tooltip('rep:Q', title='Rep'), alt.Tooltip('value:Q', format='.2f'), alt.Tooltip('status:N')])
     if band:
         bounds = pd.DataFrame([dict(band, start=min(v['rep'] for v in values), end=max(v['rep'] for v in values))])
-        region = alt.Chart(bounds).mark_rect(color='#DDEDE5', opacity=.6).encode(x='start:Q', x2='end:Q', y='lower:Q', y2='upper:Q')
-        mean = alt.Chart(bounds).mark_rule(color='#45836C', strokeDash=[5, 4]).encode(y='mean:Q')
+        region = alt.Chart(bounds).mark_rect(color='#E3EFE5', opacity=.8).encode(x='start:Q', x2='end:Q', y='lower:Q', y2='upper:Q')
+        mean = alt.Chart(bounds).mark_rule(color='#6E9C7B', strokeDash=[5, 4]).encode(y='mean:Q')
         chart = region + mean + chart
     return chart.properties(height=240, title=title)
 
@@ -307,7 +396,7 @@ def conversation(link, height=420):
     if st.session_state.pop('clear_message_draft', False): st.session_state.pop('message_draft', None)
     with st.form(f'message_{patient_id}'):
         text = st.text_area('Message', max_chars=2000, key='message_draft', placeholder=f'Write to {name}…', label_visibility='collapsed')
-        send = st.form_submit_button('Send message →', type='primary', width='stretch')
+        send = st.form_submit_button('Send message', type='primary', width='stretch')
     if send:
         message_id = st.session_state.setdefault('pending_message_id', str(uuid4()))
         backend.send_message(token, patient_id, text, message_id)
@@ -319,7 +408,7 @@ def conversation(link, height=420):
 
 # ---------------------------------------------------------------- pages
 def invitations_page():
-    banner('Invite patients', 'Add patients to your roster. They accept the invitation in the HomeStretch app.')
+    banner('Add patients to your roster. They accept the invitation in the HomeStretch app.')
     left, right = st.columns([1, 1.6], gap='medium')
     with left:
         with card():
@@ -353,7 +442,7 @@ def invitations_page():
 
 
 def roster_page(links):
-    banner('Patient Roster', 'Your connected HomeStretch patients and their latest exercise sets.')
+    banner('Your connected HomeStretch patients and their latest exercise sets.')
     summaries = []
     for link in links:
         recordings = load_sessions(link['patient_id'])
@@ -361,21 +450,20 @@ def roster_page(links):
         summaries.append((link, recordings, recent))
     try: pending = sum(r.get('status') == 'pending' for r in backend.invitations(token))
     except Exception: pending = None
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric('Patients', len(links))
-    k2.metric(f'Sets in last {RECENT_DAYS} days', sum(len(x[2]) for x in summaries))
-    k3.metric(f'Reps outside baseline ({RECENT_DAYS} d)', sum(int(r.get('num_atypical') or 0) for x in summaries for r in x[2]))
-    k4.metric('Pending invitations', '—' if pending is None else pending)
+    kpis([(len(links), 'Connected patients'),
+          (sum(len(x[2]) for x in summaries), f'Sets in the last {RECENT_DAYS} days'),
+          (sum(int(r.get('num_atypical') or 0) for x in summaries for r in x[2]), f'Reps outside baseline ({RECENT_DAYS} days)'),
+          ('—' if pending is None else pending, 'Pending invitations')])
     if not links:
         st.info('No connected patients yet. Open **Invite patients** to add your first patient.')
-        if st.button('Invite a patient →', type='primary'):
+        if st.button('Invite a patient', type='primary'):
             go('Invite patients')
         return
     st.caption('Status is a display aid based on uploaded sets only. It is not a measure of adherence or clinical safety.')
-    search = st.text_input('Search patients', placeholder='Patient name', label_visibility='collapsed')
+    search = st.text_input('Search patients', placeholder='Search patients', label_visibility='collapsed')
     headers = st.columns([2.1, 1.5, 1, 1.3, 2, 1.1, 1])
     for col, label in zip(headers, ['Patient', 'Status', f'Sets ({RECENT_DAYS} d)', 'Latest typical', 'Latest set', '', '']):
-        if label: col.markdown(f'**{label}**')
+        if label: col.markdown(f'<div class="hs-table-head"><p>{label}</p></div>', unsafe_allow_html=True)
     for link, recordings, recent in summaries:
         name = link.get('patient_name') or 'Patient'
         if search and search.casefold() not in name.casefold(): continue
@@ -396,7 +484,7 @@ def roster_page(links):
             cols[4].caption(f"{exercise_of(latest)[1]} · {fmt_time(recording_time(latest))}" if latest else 'No sets yet')
             if cols[5].button('Chat', icon=':material/chat:', key=f"msg_{link['patient_id']}", width='stretch'):
                 go('Messages', chat_patient=link['patient_id'])
-            if cols[6].button('View →', key=f"view_{link['patient_id']}", width='stretch'):
+            if cols[6].button('View', key=f"view_{link['patient_id']}", width='stretch'):
                 st.session_state.selected_patient = link['patient_id']
                 st.rerun()
 
@@ -406,11 +494,8 @@ def recording_label(row):
 
 
 def recording_detail(patient_id, recording):
-    a, b, c, d = st.columns(4)
-    a.metric('Reps', recording.get('num_reps', '—'))
-    b.metric('Typical', recording.get('num_typical', '—'))
-    c.metric('Outside baseline', recording.get('num_atypical', '—'))
-    d.metric('Unassessed', recording.get('num_unassessed', '—'))
+    kpis([(recording.get('num_reps', '—'), 'Reps'), (recording.get('num_typical', '—'), 'Typical'),
+          (recording.get('num_atypical', '—'), 'Outside baseline'), (recording.get('num_unassessed', '—'), 'Unassessed')])
     if recording.get('status') == 'interrupted' or recording.get('complete') is False:
         st.warning('This recording was interrupted. Results may be incomplete.')
     flags = [(r.get('rep'), [METRICS.get(f, f) for f in r.get('features_outside_baseline') or []])
@@ -437,7 +522,7 @@ def recording_detail(patient_id, recording):
     for key, title in METRICS.items():
         chart = per_rep_chart(recording, key, title)
         if chart is None: continue
-        with columns[shown % 2]: st.altair_chart(chart, width='stretch')
+        with columns[shown % 2]: st.altair_chart(chart_style(chart), width='stretch')
         shown += 1
     if not shown: st.info('This set does not contain per-rep movement metrics. Sets recorded with a saved baseline include them.')
 
@@ -445,23 +530,22 @@ def recording_detail(patient_id, recording):
 def profile_page(link):
     patient_id = link['patient_id']
     name = link.get('patient_name') or 'Patient'
-    if st.button('← Back to Patients'):
+    if st.button('Back to patients', icon=':material/arrow_back:', type='tertiary'):
         st.session_state.selected_patient = None
         st.rerun()
     recordings = load_sessions(patient_id)
     status, kind = patient_status(recordings)
     with card('hs-profile-banner'):
-        left, right = st.columns([4, 1], vertical_alignment='center')
-        left.subheader(name)
+        avatar, left, right = st.columns([.6, 6, 1.4], vertical_alignment='center')
+        avatar.markdown(f'<div class="hs-avatar">{html.escape(initials(name))}</div>', unsafe_allow_html=True)
+        left.markdown(f'<div style="font-size:1.2rem;font-weight:600;margin-bottom:-6px">{html.escape(name)}</div>', unsafe_allow_html=True)
         left.caption('HomeStretch patient' + (f" · connected {fmt_time(link.get('created_at'), with_time=False)}" if link.get('created_at') else ''))
         right.markdown(chip(status, kind), unsafe_allow_html=True)
     curls = [r for r in recordings if is_bicep_curl(r)]
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric('Recorded sets', len(recordings))
-    k2.metric('Bicep curl sets', len(curls))
-    k3.metric('Bicep curl reps', sum(int(r.get('num_reps') or 0) for r in curls))
     latest_time = recording_time(recordings[0]) if recordings else None
-    k4.metric('Latest set', latest_time.astimezone().strftime('%b %d') if latest_time else '—')
+    kpis([(len(recordings), 'Recorded sets'), (len(curls), 'Bicep curl sets'),
+          (sum(int(r.get('num_reps') or 0) for r in curls), 'Bicep curl reps'),
+          (latest_time.astimezone().strftime('%b %d') if latest_time else '—', 'Latest set')])
 
     tab_progress, tab_sets, tab_messages, tab_manage = st.tabs(['Progress', 'Sets', 'Messages', 'Connection'])
     with tab_progress:
@@ -480,14 +564,14 @@ def profile_page(link):
                 with card():
                     section('Repetitions per set')
                     chart = reps_chart(selected)
-                    if chart is not None: st.altair_chart(chart, width='stretch')
+                    if chart is not None: st.altair_chart(chart_style(chart), width='stretch')
                     else: st.caption('No repetition counts are available.')
             with right:
                 with card():
                     section('Time per repetition')
                     chart = duration_chart(selected)
                     if chart is not None:
-                        st.altair_chart(chart, width='stretch')
+                        st.altair_chart(chart_style(chart), width='stretch')
                         st.caption('Line: mean seconds per rep. Bar: fastest to slowest rep in the set.')
                     else: st.caption('Per-rep timing is not available for these sets.')
             with card():
@@ -501,7 +585,7 @@ def profile_page(link):
                     _, set_order = set_label_map(selected)
                     with sets_col: shown = set_checkboxes(set_order, f'trend_{patient_id}_{chosen}')
                     chart = metric_trend_chart(selected, key, shown)
-                    if chart is not None: st.altair_chart(chart, width='stretch')
+                    if chart is not None: st.altair_chart(chart_style(chart), width='stretch')
                     else: st.caption('No sets selected. Tick at least one set above.')
                     st.caption('Each line is one set. Points are the per-rep values exactly as stored, in rep order (rep 1, rep 2, …).')
     with tab_sets:
@@ -526,7 +610,7 @@ def profile_page(link):
 
 
 def messages_page(links):
-    banner('Messages', 'Communicate with your connected patients')
+    banner('Message your connected patients.')
     if not links:
         st.info('Messages are available after a patient accepts your invitation.')
         return
@@ -537,11 +621,12 @@ def messages_page(links):
         with card():
             section('Patients')
             search = st.text_input('Search conversations', placeholder='Search patients…', label_visibility='collapsed')
+            chat_list = st.container(key='hs_chatlist')
             for link in links:
                 name = link.get('patient_name') or 'Patient'
                 if search and search.casefold() not in name.casefold(): continue
                 selected = link['patient_id'] == st.session_state.chat_patient
-                if st.button(('●  ' if selected else '○  ') + name, key=f"chat_{link['patient_id']}", width='stretch', type='primary' if selected else 'secondary'):
+                if chat_list.button(name, key=f"chat_{link['patient_id']}", width='stretch', type='primary' if selected else 'secondary'):
                     st.session_state.chat_patient = link['patient_id']
                     st.rerun()
     with right:
